@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 # App: Constructor de Encuestas → Exporta XLSForm para Survey123
-import re
+import re, json
 from io import BytesIO
 from datetime import datetime
 
@@ -19,8 +19,17 @@ Crea tu cuestionario y **exporta un XLSForm** (Excel con hojas `survey`, `choice
 - **Ordena** las preguntas (subir/bajar).
 - Marca **requeridas**.
 - Define **opciones** para las preguntas con respuestas predeterminadas.
-- Al final, descarga el **XLSForm** que puedes **subir a Survey123 Connect** (o al diseñador web de Survey123) para generar la encuesta.
+- Al final, descarga el **XLSForm** que puedes **subir a Survey123 Connect** o al diseñador web de Survey123.
 """)
+
+# ==========================
+# Compat: rerun (1.36+ / versiones previas)
+# ==========================
+def _rerun():
+    if hasattr(st, "rerun"):
+        st.rerun()
+    else:
+        st.experimental_rerun()
 
 # ==========================
 # Helpers
@@ -62,7 +71,7 @@ def asegurar_nombre_unico(base: str, usados: set) -> str:
 
 def map_tipo_to_xlsform(tipo_ui: str, name: str):
     """
-    Mapea el tipo elegido en UI al tipo XLSForm.
+    Mapea el tipo de UI al tipo XLSForm.
     Retorna (type_str, appearance, list_name_opcional)
     """
     if tipo_ui == "Texto (corto)":
@@ -70,7 +79,7 @@ def map_tipo_to_xlsform(tipo_ui: str, name: str):
     if tipo_ui == "Párrafo (texto largo)":
         return ("text", "multiline", None)
     if tipo_ui == "Número":
-        return ("integer", None, None)  # usa integer; cambia a 'decimal' si lo prefieres
+        return ("integer", None, None)  # cambia a 'decimal' si prefieres
     if tipo_ui == "Selección única":
         return (f"select_one list_{name}", None, f"list_{name}")
     if tipo_ui == "Selección múltiple":
@@ -81,12 +90,11 @@ def map_tipo_to_xlsform(tipo_ui: str, name: str):
         return ("time", None, None)
     if tipo_ui == "GPS (ubicación)":
         return ("geopoint", None, None)
-    # fallback
     return ("text", None, None)
 
 def construir_xlsform(preguntas, form_title: str, idioma: str, version: str):
     """
-    Construye tres DataFrames: survey, choices, settings.
+    Construye DataFrames: survey, choices, settings.
     preguntas: lista de dicts con:
         - tipo_ui
         - label
@@ -119,7 +127,6 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str):
         # Si la pregunta es de opciones, construimos 'choices'
         if list_name:
             opciones = q.get("opciones") or []
-            # Asegurar names válidos en choices
             usados = set()
             for opt_label in opciones:
                 base = slugify_name(str(opt_label))
@@ -131,8 +138,7 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str):
                     "label": str(opt_label)
                 })
 
-    # Hojas
-    df_survey = pd.DataFrame(survey_rows, columns=[c for c in ["type","name","label","required","appearance"]])
+    df_survey  = pd.DataFrame(survey_rows,  columns=[c for c in ["type","name","label","required","appearance"]])
     df_choices = pd.DataFrame(choices_rows, columns=["list_name","name","label"]) if choices_rows else pd.DataFrame(columns=["list_name","name","label"])
     df_settings = pd.DataFrame([{
         "form_title": form_title,
@@ -145,20 +151,27 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str):
 def descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo: str = "encuesta_xlsform.xlsx"):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        df_survey.to_excel(writer, sheet_name="survey", index=False)
-        df_choices.to_excel(writer, sheet_name="choices", index=False)
+        df_survey.to_excel(writer,  sheet_name="survey",   index=False)
+        df_choices.to_excel(writer, sheet_name="choices",  index=False)
         df_settings.to_excel(writer, sheet_name="settings", index=False)
 
-        # Un poquito de formato
+        # Formato simple: encabezados en negrita + panes congelados + ancho base
         wb = writer.book
         fmt_hdr = wb.add_format({"bold": True, "align": "left"})
         for sheet in ("survey", "choices", "settings"):
             ws = writer.sheets[sheet]
             ws.freeze_panes(1, 0)
             ws.set_row(0, None, fmt_hdr)
-            # auto ancho sencillo
-            for col_idx, col_name in enumerate(pd.read_excel(BytesIO(buffer.getvalue()), sheet_name=sheet).columns if buffer.getbuffer().nbytes else []):
-                ws.set_column(col_idx, col_idx, max(12, min(45, len(str(col_name)) + 2)))
+            # ancho base razonable por columna
+            # evita re-leer el buffer (robusto en Streamlit)
+            if sheet == "survey":
+                cols = list(df_survey.columns)
+            elif sheet == "choices":
+                cols = list(df_choices.columns)
+            else:
+                cols = list(df_settings.columns)
+            for col_idx, col_name in enumerate(cols):
+                ws.set_column(col_idx, col_idx, max(14, min(40, len(str(col_name)) + 10)))
 
     buffer.seek(0)
     st.download_button(
@@ -175,12 +188,61 @@ def descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo: 
 if "preguntas" not in st.session_state:
     st.session_state.preguntas = []
 
+if "seed_cargado" not in st.session_state:
+    # Precarga: 5 preguntas de seguridad para pruebas
+    seed = [
+        {
+            "tipo_ui": "Selección múltiple",
+            "label": "¿Cuáles considera que son los principales factores que afectan la seguridad en su comunidad?",
+            "name": "factores_seguridad",
+            "required": True,
+            "opciones": [
+                "Consumo de drogas",
+                "Pandillas o grupos delictivos",
+                "Iluminación deficiente",
+                "Falta de patrullaje policial",
+                "Conflictos vecinales",
+                "Otras causas"
+            ]
+        },
+        {
+            "tipo_ui": "Texto (corto)",
+            "label": "¿Qué acciones podrían mejorar la seguridad en su zona?",
+            "name": "acciones_mejora",
+            "required": True,
+            "opciones": []
+        },
+        {
+            "tipo_ui": "Fecha",
+            "label": "¿En qué fecha ocurrió el último incidente de inseguridad que recuerda en su barrio?",
+            "name": "fecha_incidente",
+            "required": False,
+            "opciones": []
+        },
+        {
+            "tipo_ui": "GPS (ubicación)",
+            "label": "Indique la ubicación aproximada del incidente o de la zona de mayor riesgo.",
+            "name": "ubicacion_riesgo",
+            "required": False,
+            "opciones": []
+        },
+        {
+            "tipo_ui": "Párrafo (texto largo)",
+            "label": "Observaciones adicionales o comentarios sobre la seguridad en su comunidad.",
+            "name": "observaciones_generales",
+            "required": False,
+            "opciones": []
+        }
+    ]
+    st.session_state.preguntas = seed
+    st.session_state.seed_cargado = True
+
 # ==========================
 # Sidebar: Metadatos
 # ==========================
 with st.sidebar:
     st.header("⚙️ Configuración")
-    form_title = st.text_input("Título del formulario", value="Encuesta Sembremos Seguridad")
+    form_title = st.text_input("Título del formulario", value="Encuesta de Seguridad Ciudadana")
     idioma = st.selectbox("Idioma por defecto (default_language)", options=["es", "en"], index=0)
     version_auto = datetime.now().strftime("%Y%m%d%H%M")
     version = st.text_input("Versión (settings.version)", value=version_auto,
@@ -197,7 +259,7 @@ with st.sidebar:
                 "version": version,
                 "preguntas": st.session_state.preguntas
             }
-            jbuf = BytesIO(pd.Series(proj).to_json().encode("utf-8"))
+            jbuf = BytesIO(json.dumps(proj, ensure_ascii=False, indent=2).encode("utf-8"))
             st.download_button("Descargar JSON", data=jbuf, file_name="proyecto_encuesta.json",
                                mime="application/json", use_container_width=True)
     with col_imp:
@@ -205,10 +267,9 @@ with st.sidebar:
         if up is not None:
             try:
                 raw = up.read().decode("utf-8")
-                # leer con pandas para ser tolerantes
-                s = pd.read_json(BytesIO(raw.encode("utf-8")), typ="series")
-                st.session_state.preguntas = list(s.get("preguntas", []))
-                st.success("Proyecto importado.")
+                data = json.loads(raw)
+                st.session_state.preguntas = list(data.get("preguntas", []))
+                _rerun()
             except Exception as e:
                 st.error(f"No se pudo importar el JSON: {e}")
 
@@ -242,7 +303,6 @@ if add:
     if not label.strip():
         st.warning("Agrega una etiqueta.")
     else:
-        # Normalizar y asegurar name único
         base = slugify_name(name or label)
         usados = {q["name"] for q in st.session_state.preguntas}
         unico = asegurar_nombre_unico(base, usados)
@@ -279,13 +339,19 @@ else:
 
             # Mover
             if up:
-                st.session_state.preguntas[idx-1], st.session_state.preguntas[idx] = st.session_state.preguntas[idx], st.session_state.preguntas[idx-1]
-                st.experimental_rerun()
+                st.session_state.preguntas[idx-1], st.session_state.preguntas[idx] = (
+                    st.session_state.preguntas[idx],
+                    st.session_state.preguntas[idx-1],
+                )
+                _rerun()
             if down:
-                st.session_state.preguntas[idx+1], st.session_state.preguntas[idx] = st.session_state.preguntas[idx], st.session_state.preguntas[idx+1]
-                st.experimental_rerun()
+                st.session_state.preguntas[idx+1], st.session_state.preguntas[idx] = (
+                    st.session_state.preguntas[idx],
+                    st.session_state.preguntas[idx+1],
+                )
+                _rerun()
 
-            # Editar inline mínimo
+            # Editar inline
             if edit:
                 st.markdown("**Editar esta pregunta**")
                 ne_label = st.text_input("Etiqueta", value=q["label"], key=f"e_label_{idx}")
@@ -299,7 +365,6 @@ else:
 
                 col_ok, col_cancel = st.columns(2)
                 if col_ok.button("💾 Guardar cambios", key=f"e_save_{idx}", use_container_width=True):
-                    # validar name único (si cambió)
                     new_base = slugify_name(ne_name or ne_label)
                     usados = {qq["name"] for j, qq in enumerate(st.session_state.preguntas) if j != idx}
                     ne_name_final = new_base if new_base not in usados else asegurar_nombre_unico(new_base, usados)
@@ -310,14 +375,14 @@ else:
                     if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
                         st.session_state.preguntas[idx]["opciones"] = ne_opciones
                     st.success("Cambios guardados.")
-                    st.experimental_rerun()
+                    _rerun()
                 if col_cancel.button("Cancelar", key=f"e_cancel_{idx}", use_container_width=True):
-                    st.experimental_rerun()
+                    _rerun()
 
             if borrar:
                 del st.session_state.preguntas[idx]
                 st.warning("Pregunta eliminada.")
-                st.experimental_rerun()
+                _rerun()
 
 # ==========================
 # Exportar XLSForm
@@ -375,8 +440,8 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
 # ==========================
 st.markdown("""
 ---
-✅ **Listo para Survey123:** El XLSForm que descargas es estándar (XLSForm).  
-Incluye tipos como `text`, `integer`, `date`, `time`, `geopoint`, `select_one` y `select_multiple`, y gestiona automáticamente las listas de opciones.
+✅ **Listo para Survey123:** El XLSForm descargado es estándar (XLSForm).  
+Incluye tipos `text`, `integer`, `date`, `time`, `geopoint`, `select_one` y `select_multiple`, y gestiona automáticamente las listas de opciones.
 """)
 
 
