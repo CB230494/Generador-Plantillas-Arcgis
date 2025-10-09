@@ -816,4 +816,3 @@ st.markdown("""
 🖼️ **Logo**: en la hoja `survey`, columna **`media::image`**; coloca el archivo en la carpeta **`media/`** de Survey123 Connect.  
 🧠 **Condicionales**: se comparan contra los **names (slug)** de los choices, por eso ahora se despliegan correctamente las subopciones de **Agente II / Sub Oficial I / Sub Oficial II / Oficial I**, y todas las de **Si/No**.  
 """)
-
