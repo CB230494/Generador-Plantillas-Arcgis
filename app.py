@@ -169,7 +169,7 @@ with col_logo:
 
 with col_txt:
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    delegacion = st.text_input("Nombre de la Delegación", value="San Carlos Oeste 2024")
+    delegacion = st.text_input("Nombre de la Delegación", value="San Carlos Oeste")
     logo_media_name = st.text_input(
         "Nombre de archivo para `media::image`",
         value=st.session_state.get("_logo_name", "001.png"),
@@ -208,8 +208,8 @@ if "seed_cargado" not in st.session_state:
 
     seed = [
         # ================== Página 2: Datos ==================
-        {"tipo_ui":"Número","label":"Años de servicio (Numérica)","name":"anos_servicio","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Número","label":"Edad (Numérica)","name":"edad","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Número","label":"Años de servicio ","name":"anos_servicio","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Número","label":"Edad","name":"edad","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
         {"tipo_ui":"Selección única","label":"Genero","name":"genero","required":True,"opciones":["Masculino","Femenino","LGBTQ+"],"appearance":None,"choice_filter":None,"relevant":None},
         {"tipo_ui":"Selección única","label":"Escolaridad","name":"escolaridad","required":True,
          "opciones":["Ninguna","Primaria","Primaria Incompleta","Secundaria","Secundaria Incompleta","Universidad Completa","Universidad Incompleta","Técnico"],
@@ -817,3 +817,4 @@ st.markdown("""
 🧭 **Páginas**: `style=pages` activa **Siguiente / Atrás**.  
 🧠 **Condicionales**: comparan contra el **name (slug)** de cada opción; por eso se despliegan correctamente las subopciones de **Agente II / Sub Oficial I / Sub Oficial II / Oficial I** y todas las de **Si/No**.  
 """)
+
