@@ -145,7 +145,7 @@ def build_relevant_expr(rules_for_target):
     return xlsform_or_expr(or_parts)
 
 # ==========================================================================================
-# Cabecera: Logo + “¿A quién va dirigido?”
+# Cabecera: Logo + “Nombre de la Delegación” → form_title compuesto
 # ==========================================================================================
 DEFAULT_LOGO_PATH = "001.png"
 
@@ -169,13 +169,14 @@ with col_logo:
 
 with col_txt:
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    dirigido_a = st.text_input("¿A quién va dirigido?", value="Fuerza Pública – Delegación …")
+    delegacion = st.text_input("Nombre de la Delegación", value="San Carlos Oeste 2024")
     logo_media_name = st.text_input(
         "Nombre de archivo para `media::image`",
         value=st.session_state.get("_logo_name", "001.png"),
-        help="Este nombre debe coincidir con el archivo que copiarás en la carpeta `media/` de Survey123 Connect."
+        help="Debe coincidir con el archivo que copiarás en la carpeta `media/` de Survey123 Connect."
     )
-    st.markdown(f"<h5 style='text-align:center;margin:4px 0'>📋 {dirigido_a}</h5>", unsafe_allow_html=True)
+    titulo_compuesto = f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}" if delegacion.strip() else "Encuesta Fuerza Pública"
+    st.markdown(f"<h5 style='text-align:center;margin:4px 0'>📋 {titulo_compuesto}</h5>", unsafe_allow_html=True)
 
 # ==========================================================================================
 # Estado (session_state)
@@ -206,7 +207,7 @@ if "seed_cargado" not in st.session_state:
     v_oficial_i = slugify_name("Oficial I")
 
     seed = [
-        # ================== Página 2: Datos del funcionario ==================
+        # ================== Página 2: Datos ==================
         {"tipo_ui":"Número","label":"Años de servicio (Numérica)","name":"anos_servicio","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
         {"tipo_ui":"Número","label":"Edad (Numérica)","name":"edad","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
         {"tipo_ui":"Selección única","label":"Genero","name":"genero","required":True,"opciones":["Masculino","Femenino","LGBTQ+"],"appearance":None,"choice_filter":None,"relevant":None},
@@ -284,7 +285,10 @@ if "seed_cargado" not in st.session_state:
 # ==========================================================================================
 with st.sidebar:
     st.header("⚙️ Configuración")
-    form_title = st.text_input("Título del formulario", value="Encuesta Fuerza Pública")
+    # El título usa tu encabezado compuesto por la Delegación
+    form_title = st.text_input("Título del formulario",
+                               value=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
+                                      if delegacion.strip() else "Encuesta Fuerza Pública"))
     idioma = st.selectbox("Idioma por defecto (default_language)", options=["es", "en"], index=0)
     version_auto = datetime.now().strftime("%Y%m%d%H%M")
     version = st.text_input("Versión (settings.version)", value=version_auto)
@@ -322,14 +326,6 @@ with st.sidebar:
         })
 
         # Regla visual opcional: mostrar distrito cuando hay cantón
-        st.session_state.reglas_visibilidad.append({
-            "target": name_distrito,
-            "src": name_canton,
-            "op": "=",
-            "values": [slugify_name(v) for v in ["Alajuela (Central)", "Sabanilla", "Desamparados"]]
-        })
-
-        # Choices extendidos con canton_key
         if "choices_ext_rows" not in st.session_state:
             st.session_state.choices_ext_rows = []
         st.session_state.choices_extra_cols.update({"canton_key"})
@@ -452,7 +448,6 @@ else:
         src_q = next((q for q in st.session_state.preguntas if q["name"] == src), None)
         vals = []
         if src_q and src_q["opciones"]:
-            # Importante: slugificamos para que el relevant compare por 'name' del choice
             vals = st.multiselect("Valores que activan la visibilidad (elige texto; internamente se usa el 'name' slug)", options=src_q["opciones"])
             vals = [slugify_name(v) for v in vals]
         else:
@@ -585,10 +580,13 @@ else:
 # ==========================================================================================
 # Construcción XLSForm (páginas, condicionales y logo)
 # ==========================================================================================
-INTRO_RESUMIDA = (
-    "Con el objetivo de fortalecer la seguridad en los territorios, esta encuesta recopila "
-    "percepciones y datos operativos del personal de Fuerza Pública. La información es confidencial "
-    "y se usará exclusivamente para orientar acciones de mejora."
+INTRO_AMPLIADA = (
+    "Con el objetivo de fortalecer la seguridad en nuestros distintos territorios, esta encuesta "
+    "recopila percepciones y datos operativos del personal de Fuerza Pública. La información será "
+    "analizada para identificar patrones delictivos, necesidades de recursos y oportunidades de mejora. "
+    "La participación es confidencial y los datos se utilizarán exclusivamente para orientar acciones "
+    "institucionales y apoyar la toma de decisiones, en coordinación con las autoridades locales, "
+    "otras instituciones y la comunidad."
 )
 
 def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
@@ -618,9 +616,9 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
             fin_conds.append((r["index_src"], cond))
 
     # ------------------- Página 1: INTRODUCCIÓN -------------------
-    survey_rows.append({"type":"begin_group","name":"p1_intro","label":"Introducción a la encuesta","appearance":"field-list"})
-    survey_rows.append({"type":"note","name":"intro_titulo","label":form_title, "media::image": logo_media_name})
-    survey_rows.append({"type":"note","name":"intro_texto","label":INTRO_RESUMIDA})
+    survey_rows.append({"type":"begin_group","name":"p1_intro","label":"Introducción","appearance":"field-list"})
+    survey_rows.append({"type":"note","name":"intro_logo","label":form_title, "media::image": logo_media_name})
+    survey_rows.append({"type":"note","name":"intro_texto","label":INTRO_AMPLIADA})
     survey_rows.append({"type":"end_group","name":"p1_end"})
 
     # Páginas a partir del nombre de las preguntas (grupos lógicos)
@@ -664,8 +662,8 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
                 usados.add(opt_name)
                 choices_rows.append({"list_name": list_name, "name": opt_name, "label": str(opt_label)})
 
-    # ------------------- Página 2: DATOS DEL FUNCIONARIO -------------------
-    survey_rows.append({"type":"begin_group","name":"p2_datos","label":"Datos del funcionario","appearance":"field-list"})
+    # ------------------- Página 2: DATOS -------------------
+    survey_rows.append({"type":"begin_group","name":"p2_datos","label":"Datos","appearance":"field-list"})
     for i, q in enumerate(preguntas):
         if q["name"] in pagina2:
             add_q(q, i)
@@ -766,8 +764,11 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
         else:
             df_survey, df_choices, df_settings = construir_xlsform(
                 st.session_state.preguntas,
-                form_title=form_title.strip() or "Encuesta",
-                idioma=idioma,
+                form_title=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
+                            if delegacion.strip() else "Encuesta Fuerza Pública"),
+                idioma=st.sidebar.session_state.get('selectbox', 'es') if False else "es" if st.session_state.get("idioma") is None else None,
+                # Usamos las variables visibles:
+                idioma=st.session_state.get("idioma_override", None) or st.sidebar.selectbox if False else idioma,
                 version=version.strip() or datetime.now().strftime("%Y%m%d%H%M"),
                 reglas_vis=st.session_state.reglas_visibilidad,
                 reglas_fin=st.session_state.reglas_finalizar
@@ -785,7 +786,7 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
                 st.markdown("**Hoja: settings**")
                 st.dataframe(df_settings, use_container_width=True, hide_index=True)
 
-            nombre_archivo = slugify_name(form_title or "encuesta") + "_xlsform.xlsx"
+            nombre_archivo = slugify_name(f"Encuesta Fuerza Pública – Delegación {delegacion}" if delegacion.strip() else "encuesta") + "_xlsform.xlsx"
             descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo=nombre_archivo)
 
             if st.session_state.get("_logo_bytes"):
@@ -801,8 +802,8 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
 **Publicar en Survey123 (Connect)**
 1) Crea la encuesta **desde archivo** con el XLSForm exportado.
 2) Copia tu imagen de logo a la carpeta **media/** del proyecto con el **mismo nombre** que figura en la columna `media::image` (p. ej. `001.png`).
-3) Previsualiza: verás la primera página **“Introducción a la encuesta”** y los botones **Siguiente/Anterior**.
-4) Publica.
+3) Previsualiza: verás la página 1 **“Introducción”**, y en todas las páginas el encabezado **“Encuesta Fuerza Pública – Delegación …”**.
+4) Usa **Siguiente / Atrás** para navegar y publica.
 """)
     except Exception as e:
         st.error(f"Ocurrió un error al generar el XLSForm: {e}")
@@ -812,7 +813,7 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
 # ==========================================================================================
 st.markdown("""
 ---
-✅ **Páginas** activadas con `style=pages`: el formulario se muestra **una página a la vez** con botones **Siguiente** y **Atrás**.  
 🖼️ **Logo**: en la hoja `survey`, columna **`media::image`**; coloca el archivo en la carpeta **`media/`** de Survey123 Connect.  
-🧠 **Condicionales**: se comparan contra los **names (slug)** de los choices, por eso ahora se despliegan correctamente las subopciones de **Agente II / Sub Oficial I / Sub Oficial II / Oficial I**, y todas las de **Si/No**.  
+🧭 **Páginas**: `style=pages` activa **Siguiente / Atrás**.  
+🧠 **Condicionales**: comparan contra el **name (slug)** de cada opción; por eso se despliegan correctamente las subopciones de **Agente II / Sub Oficial I / Sub Oficial II / Oficial I** y todas las de **Si/No**.  
 """)
