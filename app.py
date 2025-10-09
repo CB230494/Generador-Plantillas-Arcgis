@@ -176,7 +176,7 @@ if "choices_extra_cols" not in st.session_state:
     st.session_state.choices_extra_cols = set()
 
 # ==========================
-# SEED: Preguntas EXACTAS que pediste (con condicionales)
+# SEED: Preguntas EXACTAS (con condicionales)
 # ==========================
 if "seed_cargado" not in st.session_state:
     seed = [
@@ -491,7 +491,7 @@ else:
                 st.markdown("**Editar esta pregunta**")
                 ne_label = st.text_input("Etiqueta", value=q["label"], key=f"e_label_{idx}")
                 ne_name = st.text_input("Nombre interno (name)", value=q["name"], key=f"e_name_{idx}")
-                ne_required = st.checkbox("Requerida", value=q["required"], key=f"e_req_{idx"])
+                ne_required = st.checkbox("Requerida", value=q["required"], key=f"e_req_{idx}")
                 ne_appearance = st.text_input("Appearance", value=q.get("appearance") or "", key=f"e_app_{idx}")
                 ne_choice_filter = st.text_input("choice_filter (opcional)", value=q.get("choice_filter") or "", key=f"e_cf_{idx}")
                 ne_relevant = st.text_input("relevant (opcional – se autogenera por reglas)", value=q.get("relevant") or "", key=f"e_rel_{idx}")
