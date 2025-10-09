@@ -286,9 +286,11 @@ if "seed_cargado" not in st.session_state:
 with st.sidebar:
     st.header("⚙️ Configuración")
     # El título usa tu encabezado compuesto por la Delegación
-    form_title = st.text_input("Título del formulario",
-                               value=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
-                                      if delegacion.strip() else "Encuesta Fuerza Pública"))
+    form_title = st.text_input(
+        "Título del formulario",
+        value=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
+               if delegacion.strip() else "Encuesta Fuerza Pública")
+    )
     idioma = st.selectbox("Idioma por defecto (default_language)", options=["es", "en"], index=0)
     version_auto = datetime.now().strftime("%Y%m%d%H%M")
     version = st.text_input("Versión (settings.version)", value=version_auto)
@@ -325,7 +327,7 @@ with st.sidebar:
             "relevant": None
         })
 
-        # Regla visual opcional: mostrar distrito cuando hay cantón
+        # Choices extendidos con canton_key
         if "choices_ext_rows" not in st.session_state:
             st.session_state.choices_ext_rows = []
         st.session_state.choices_extra_cols.update({"canton_key"})
@@ -766,9 +768,7 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
                 st.session_state.preguntas,
                 form_title=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
                             if delegacion.strip() else "Encuesta Fuerza Pública"),
-                idioma=st.sidebar.session_state.get('selectbox', 'es') if False else "es" if st.session_state.get("idioma") is None else None,
-                # Usamos las variables visibles:
-                idioma=st.session_state.get("idioma_override", None) or st.sidebar.selectbox if False else idioma,
+                idioma=idioma,
                 version=version.strip() or datetime.now().strftime("%Y%m%d%H%M"),
                 reglas_vis=st.session_state.reglas_visibilidad,
                 reglas_fin=st.session_state.reglas_finalizar
