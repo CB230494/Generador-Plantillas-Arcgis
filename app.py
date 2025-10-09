@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# App: Constructor de Encuestas → Exporta XLSForm para Survey123 (condicionales + cascadas)
+# App: Constructor de Encuestas → Exporta XLSForm para Survey123 (condicionales + cascadas + intro/logo)
 import re, json
 from io import BytesIO
 from datetime import datetime
@@ -86,7 +86,6 @@ def map_tipo_to_xlsform(tipo_ui: str, name: str):
     return ("text", None, None)
 
 def xlsform_or_expr(conds):
-    """Combina condiciones en formato XLSForm con OR ( )"""
     if not conds:
         return None
     if len(conds) == 1:
@@ -96,7 +95,6 @@ def xlsform_or_expr(conds):
 def xlsform_not(expr):
     if not expr:
         return None
-    # Si ya viene entre paréntesis, negamos el bloque
     return f"not({expr})"
 
 def build_relevant_expr(rules_for_target):
@@ -113,21 +111,60 @@ def build_relevant_expr(rules_for_target):
         if not vals:
             continue
         if op == "=":
-            # para select_one: ${src}='val'
             segs = [f"${{{src}}}='{v}'" for v in vals]
             or_parts.append(xlsform_or_expr(segs))
         elif op == "selected":
-            # para select_multiple: selected(${src}, 'val')
             segs = [f"selected(${{{src}}}, '{v}')" for v in vals]
             or_parts.append(xlsform_or_expr(segs))
         elif op == "!=":
             segs = [f"${{{src}}}!='{v}'" for v in vals]
             or_parts.append(xlsform_or_expr(segs))
         else:
-            # fallback: igualdad
             segs = [f"${{{src}}}='{v}'" for v in vals]
             or_parts.append(xlsform_or_expr(segs))
     return xlsform_or_expr(or_parts)
+
+# ==========================
+# Intro resumida y cabecera visual
+# ==========================
+INTRO_RESUMIDA = (
+    "Con el fin de fortalecer la seguridad en los territorios, esta encuesta recoge "
+    "percepciones y datos operativos del personal de Fuerza Pública sobre riesgos, delitos "
+    "y necesidades internas de la delegación. La información es confidencial y se usará "
+    "exclusivamente para orientar acciones de mejora y coordinación institucional."
+)
+
+DEFAULT_LOGO_PATH = "001.png"  # tu archivo en el repo
+col_logo, col_txt = st.columns([1, 3])
+with col_logo:
+    up_logo = st.file_uploader("Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
+    if up_logo:
+        st.image(up_logo, caption="Logo cargado", use_container_width=True)
+        st.session_state["_logo_bytes"] = up_logo.getvalue()
+        st.session_state["_logo_name"] = up_logo.name
+    else:
+        # Si no suben nada, usamos 001.png del repo
+        try:
+            st.image(DEFAULT_LOGO_PATH, caption="Logo (001.png)", use_container_width=True)
+            st.session_state["_logo_bytes"] = None
+            st.session_state["_logo_name"] = "001.png"
+        except Exception:
+            st.warning("Sube un logo (PNG/JPG) para mostrarlo e incluirlo en el XLSForm.")
+            st.session_state["_logo_bytes"] = None
+            st.session_state["_logo_name"] = "logo.png"
+
+with col_txt:
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    dirigido_a = st.text_input("¿A quién va dirigido?", value="Fuerza Pública – Delegación …")
+    logo_media_name = st.text_input(
+        "Nombre del archivo (para `media::image` en Survey123)",
+        value=st.session_state.get("_logo_name", "001.png"),
+        help="Este nombre debe coincidir con el PNG que copies a la carpeta `media` del proyecto en Survey123 Connect."
+    )
+    st.markdown(
+        f"<div style='font-size:20px; text-align:center; margin-top:6px;'><b>{dirigido_a}</b></div>",
+        unsafe_allow_html=True
+    )
 
 # ==========================
 # Estado
@@ -135,79 +172,122 @@ def build_relevant_expr(rules_for_target):
 if "preguntas" not in st.session_state:
     st.session_state.preguntas = []
 
-# reglas_visibilidad: [{target: nameY, src: nameX, op: '=', values:[...]}]
 if "reglas_visibilidad" not in st.session_state:
     st.session_state.reglas_visibilidad = []
 
-# reglas_finalizar: [{src: nameX, op:'=', values:[...], index_src:int}]
 if "reglas_finalizar" not in st.session_state:
     st.session_state.reglas_finalizar = []
 
-# choices_extra_cols: para admitir columnas extras (ej. canton_key)
 if "choices_extra_cols" not in st.session_state:
     st.session_state.choices_extra_cols = set()
 
+# Seed precargado con tu estructura y condicionales
 if "seed_cargado" not in st.session_state:
     seed = [
-        {
-            "tipo_ui": "Selección múltiple",
-            "label": "¿Cuáles son los principales factores que afectan la seguridad en su comunidad?",
-            "name": "factores_seguridad",
-            "required": True,
-            "opciones": [
-                "Consumo de drogas",
-                "Pandillas o grupos delictivos",
-                "Iluminación deficiente",
-                "Falta de patrullaje policial",
-                "Conflictos vecinales",
-                "Otras causas"
-            ],
-            "appearance": None,
-            "choice_filter": None,
-            "relevant": None
-        },
-        {
-            "tipo_ui": "Texto (corto)",
-            "label": "¿Qué acciones podrían mejorar la seguridad en su zona?",
-            "name": "acciones_mejora",
-            "required": True,
-            "opciones": [],
-            "appearance": None,
-            "choice_filter": None,
-            "relevant": None
-        },
-        {
-            "tipo_ui": "Fecha",
-            "label": "¿En qué fecha ocurrió el último incidente de inseguridad que recuerda?",
-            "name": "fecha_incidente",
-            "required": False,
-            "opciones": [],
-            "appearance": None,
-            "choice_filter": None,
-            "relevant": None
-        },
-        {
-            "tipo_ui": "GPS (ubicación)",
-            "label": "Indique la ubicación aproximada del incidente o de la zona de mayor riesgo.",
-            "name": "ubicacion_riesgo",
-            "required": False,
-            "opciones": [],
-            "appearance": None,
-            "choice_filter": None,
-            "relevant": None
-        },
-        {
-            "tipo_ui": "Párrafo (texto largo)",
-            "label": "Observaciones adicionales sobre la seguridad en su comunidad.",
-            "name": "observaciones_generales",
-            "required": False,
-            "opciones": [],
-            "appearance": None,
-            "choice_filter": None,
-            "relevant": None
-        }
+        # --- Página 2: Datos generales ---
+        {"tipo_ui":"Número", "label":"Años de servicio", "name":"anos_servicio","required":True,"opciones":[], "appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Número", "label":"Edad", "name":"edad","required":True,"opciones":[], "appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Selección única", "label":"Género", "name":"genero","required":True,
+         "opciones":["Masculino","Femenino","LGBTQ+"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Selección única", "label":"Escolaridad", "name":"escolaridad","required":True,
+         "opciones":["Ninguna","Primaria","Primaria Incompleta","Secundaria","Secundaria Incompleta","Universidad Completa","Universidad Incompleta","Técnico"],
+         "appearance":None,"choice_filter":None,"relevant":None},
+
+        # Manual de puesto (principal)
+        {"tipo_ui":"Selección única","label":"¿Qué clase del manual de puestos desempeña en su delegación?",
+         "name":"manual_puesto","required":True,
+         "opciones":["Agente I","Agente II","Sub Oficial I","Sub Oficial II","Oficial I","Jefe de Delegación","Sub Jefe de Delegación"],
+         "appearance":None,"choice_filter":None,"relevant":None},
+
+        # Sub-listas según selección
+        {"tipo_ui":"Selección única","label":"Funciones (Agente II)",
+         "name":"agente_ii_funcion","required":False,
+         "opciones":["Agente de Fronteras","Agente de Seguridad Turística","Agente de Programas Preventivos",
+                     "Agente de Comunicaciones","Agente Armero","Agente Conductor de Vehículos Oficiales","Agente de Operaciones"],
+         "appearance":None,"choice_filter":None,"relevant":"${manual_puesto}='Agente II'"},
+
+        {"tipo_ui":"Selección única","label":"Funciones (Sub Oficial I)",
+         "name":"subof1_funcion","required":False,
+         "opciones":["Encargado Equipo Operativo Policial","Encargado Equipo de Seguridad Turística",
+                     "Encargado Equipo de Fronteras","Encargado Programas Preventivos",
+                     "Encargado Agentes Armeros","Encargado de Equipo de Comunicaciones"],
+         "appearance":None,"choice_filter":None,"relevant":"${manual_puesto}='Sub Oficial I'"},
+
+        {"tipo_ui":"Selección única","label":"Funciones (Sub Oficial II)",
+         "name":"subof2_funcion","required":False,
+         "opciones":["Encargado Subgrupo Operativo Policial","Encargado Subgrupo de Seguridad Turística",
+                     "Encargado Subgrupo de Fronteras","Oficial de Guardia","Encargado de Operaciones"],
+         "appearance":None,"choice_filter":None,"relevant":"${manual_puesto}='Sub Oficial II'"},
+
+        {"tipo_ui":"Selección única","label":"Funciones (Oficial I)",
+         "name":"oficial1_funcion","required":False,
+         "opciones":["Jefe Delegación Distrital","Encargado Grupo Operativo Policial"],
+         "appearance":None,"choice_filter":None,"relevant":"${manual_puesto}='Oficial I'"},
+
+        # --- Página 3: Información de Interés Policial ---
+        {"tipo_ui":"Selección única", "label":"¿Mantiene usted información de estructuras/personas de interés policial en su jurisdicción?",
+         "name":"info_estructuras","required":True,"opciones":["Sí","No"],"appearance":None,"choice_filter":None,"relevant":None},
+
+        {"tipo_ui":"Selección múltiple","label":"¿Qué tipo de actividad delictual realizan?",
+         "name":"actividad_delictual","required":True,
+         "opciones":[
+            "Bunker (venta/distribución de drogas)","Delitos contra la vida (homicidios, heridos)",
+            "Venta/consumo de drogas en vía pública","Delitos sexuales",
+            "Asalto (personas, comercio, vivienda, TP)","Daños a la propiedad",
+            "Estafas (billetes/documentos/oro/lotería falsos)","Estafa informática",
+            "Extorsión","Hurto","Receptación","Robo a edificaciones","Robo a vivienda",
+            "Robo de ganado/agrícola","Robo a comercio","Robo de vehículos","Tacha de vehículos",
+            "Contrabando (licor/cigarrillos/medicinas/ropa/calzado)","Tráfico ilegal de personas (coyotaje)","Otro"
+         ],
+         "appearance":None,"choice_filter":None,"relevant":"${info_estructuras}='Sí'"},
+
+        {"tipo_ui":"Texto (corto)","label":"¿Cuál es el nombre de la estructura criminal?","name":"nombre_estructura","required":True,
+         "opciones":[],"appearance":None,"choice_filter":None,"relevant":"${info_estructuras}='Sí'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Indique quién(es) se dedican a estos actos (nombres, apellidos, alias, domicilio)",
+         "name":"quienes","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${info_estructuras}='Sí'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Modo de operar (venta exprés/vía pública, asalto, desplazamiento, etc.)",
+         "name":"modus_operandi","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${info_estructuras}='Sí'"},
+
+        {"tipo_ui":"Texto (corto)","label":"¿Cuál es la zona más insegura en su área de responsabilidad?",
+         "name":"zona_insegura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Describa por qué considera que esa zona es insegura",
+         "name":"por_que_insegura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+
+        # --- Página 4: Información de Interés Interno ---
+        {"tipo_ui":"Párrafo (texto largo)","label":"¿Qué recurso hace falta en su delegación para mejorar el servicio?",
+         "name":"recurso_falta","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+
+        {"tipo_ui":"Selección única","label":"¿Las condiciones de su delegación son aptas para sus necesidades básicas?",
+         "name":"condiciones_aptas","required":True,"opciones":["Sí","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"¿Cuáles condiciones se pueden mejorar?",
+         "name":"condiciones_mejorar","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${condiciones_aptas}='No'"},
+
+        {"tipo_ui":"Selección única","label":"¿Hace falta capacitación para el personal en su delegación?",
+         "name":"falta_capacitacion","required":True,"opciones":["Sí","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique en qué áreas necesita capacitación",
+         "name":"areas_capacitacion","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${falta_capacitacion}='Sí'"},
+
+        {"tipo_ui":"Selección única","label":"¿Se siente motivado por la institución para brindar un buen servicio?",
+         "name":"motivado","required":True,"opciones":["Sí","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Explique por qué no se siente motivado",
+         "name":"motivo_no","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${motivado}='No'"},
+
+        {"tipo_ui":"Selección única","label":"¿Mantiene conocimiento de situaciones anómalas en su delegación? (confidencial)",
+         "name":"anomalias","required":True,"opciones":["Sí","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique cuáles son las situaciones anómalas",
+         "name":"detalle_anomalias","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${anomalias}='Sí'"},
+
+        {"tipo_ui":"Selección única","label":"¿Conoce oficiales relacionados con estructuras criminales o delitos?",
+         "name":"oficiales_relacionados","required":True,"opciones":["Sí","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Describa la situación (estructura, tipo de actividad, oficiales, funciones, alias, etc.)",
+         "name":"describe_situacion","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":"${oficiales_relacionados}='Sí'"},
+
+        {"tipo_ui":"Texto (corto)","label":"Medio de contacto para ampliar (opcional)",
+         "name":"medio_contacto","required":False,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
     ]
     st.session_state.preguntas = seed
+    st.session_state.reglas_visibilidad = []  # usamos 'relevant' embebido
+    st.session_state.reglas_finalizar = []    # sin finalización global
     st.session_state.seed_cargado = True
 
 # ==========================
@@ -215,7 +295,7 @@ if "seed_cargado" not in st.session_state:
 # ==========================
 with st.sidebar:
     st.header("⚙️ Configuración")
-    form_title = st.text_input("Título del formulario", value="Encuesta de Seguridad Ciudadana")
+    form_title = st.text_input("Título del formulario", value="Encuesta Fuerza Pública")
     idioma = st.selectbox("Idioma por defecto (default_language)", options=["es", "en"], index=0)
     version_auto = datetime.now().strftime("%Y%m%d%H%M")
     version = st.text_input("Versión (settings.version)", value=version_auto,
@@ -246,29 +326,18 @@ with st.sidebar:
             "label": "Seleccione el Distrito",
             "name": name_distrito,
             "required": True,
-            "opciones": [  # nombres de 'name' se generan de label
-                # se ignorarán porque meteremos 'choices' personalizados con canton_key
-                "— se rellena con la lista extendida —"
-            ],
+            "opciones": ["— se rellena con la lista extendida —"],
             "appearance": None,
             "choice_filter": "canton_key=${" + name_canton + "}",
             "relevant": None
         })
 
-        # Registrar regla de visibilidad opcional: mostrar distrito solo si hay cantón
-        st.session_state.reglas_visibilidad.append({
-            "target": name_distrito,
-            "src": name_canton,
-            "op": "=",  # select_one
-            "values": ["Alajuela (Central)", "Sabanilla", "Desamparados"]
-        })
+        # Registrar regla de visibilidad opcional (mostrar si hay cantón, aquí lo omitimos porque estamos filtrando por choice_filter)
 
-        # Añadir choices extendidos con canton_key (guardamos en un buffer especial)
-        # Estructura: (list_name, name, label, canton_key)
+        # Choices extendidos
         if "choices_ext_rows" not in st.session_state:
             st.session_state.choices_ext_rows = []
-
-        st.session_state.choices_extra_cols.update({"canton_key"})  # asegurar columna extra
+        st.session_state.choices_extra_cols.update({"canton_key"})
 
         def add_choices(list_name, items, key):
             for lbl in items:
@@ -370,14 +439,14 @@ if add:
         st.success(f"Pregunta agregada: **{label}** (name: `{unico}`)")
 
 # ==========================
-# Reglas condicionales
+# Reglas condicionales (adicionales si las quieres encima de las ya embebidas)
 # ==========================
 st.subheader("🔀 Condicionales (mostrar / finalizar)")
 
 if not st.session_state.preguntas:
     st.info("Agrega preguntas para definir condicionales.")
 else:
-    # UI reglas de visibilidad (mostrar target si src tiene valores)
+    # UI reglas de visibilidad
     with st.expander("👁️ Mostrar pregunta si se cumple condición", expanded=False):
         names = [q["name"] for q in st.session_state.preguntas]
         labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
@@ -385,7 +454,6 @@ else:
         target = st.selectbox("Pregunta a mostrar (target)", options=names, format_func=lambda n: f"{n} — {labels_by_name[n]}")
         src = st.selectbox("Depende de (source)", options=names, format_func=lambda n: f"{n} — {labels_by_name[n]}")
         op = st.selectbox("Operador", options=["=", "selected"], help="= para select_one; selected para select_multiple")
-        # Valores posibles: si source tiene opciones, proponemos; sino caja libre
         src_q = next((q for q in st.session_state.preguntas if q["name"] == src), None)
         vals = []
         if src_q and src_q["opciones"]:
@@ -404,7 +472,6 @@ else:
                 st.success("Regla agregada.")
                 _rerun()
 
-        # Listado y eliminar
         if st.session_state.reglas_visibilidad:
             st.markdown("**Reglas de visibilidad actuales:**")
             for i, r in enumerate(st.session_state.reglas_visibilidad):
@@ -413,7 +480,7 @@ else:
                     del st.session_state.reglas_visibilidad[i]
                     _rerun()
 
-    # UI reglas de finalizar (ocultar lo que sigue si se cumple)
+    # UI reglas de finalizar
     with st.expander("⏹️ Finalizar temprano si se cumple condición", expanded=False):
         names = [q["name"] for q in st.session_state.preguntas]
         labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
@@ -455,7 +522,7 @@ else:
         with st.container(border=True):
             c1, c2, c3, c4, c5 = st.columns([4,2,2,2,2])
             c1.markdown(f"**{idx+1}. {q['label']}**")
-            meta = f"type: {q['tipo_ui']}  •  name: `{q['name']}`  •  requerida: {'sí' if q['required'] else 'no'}"
+            meta = f"type: {q['tipo_ui']}  •  name: `{q['name']}`  •  requerida: {'sí' if q.get('required') else 'no'}"
             if q.get("appearance"): meta += f"  •  appearance: `{q['appearance']}`"
             if q.get("choice_filter"): meta += f"  •  choice_filter: `{q['choice_filter']}`"
             if q.get("relevant"): meta += f"  •  relevant: `{q['relevant']}`"
@@ -483,7 +550,7 @@ else:
                 st.markdown("**Editar esta pregunta**")
                 ne_label = st.text_input("Etiqueta", value=q["label"], key=f"e_label_{idx}")
                 ne_name = st.text_input("Nombre interno (name)", value=q["name"], key=f"e_name_{idx}")
-                ne_required = st.checkbox("Requerida", value=q["required"], key=f"e_req_{idx}")
+                ne_required = st.checkbox("Requerida", value=q.get("required", False), key=f"e_req_{idx}")
                 ne_appearance = st.text_input("Appearance", value=q.get("appearance") or "", key=f"e_app_{idx}")
                 ne_choice_filter = st.text_input("choice_filter (opcional)", value=q.get("choice_filter") or "", key=f"e_cf_{idx}")
                 ne_relevant = st.text_input("relevant (opcional – se autogenera por reglas)", value=q.get("relevant") or "", key=f"e_rel_{idx}")
@@ -524,7 +591,8 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
                       reglas_vis, reglas_fin):
     """
     Construye DataFrames: survey, choices, settings.
-    - Aplica 'relevant' para reglas de visibilidad.
+    - Inserta INTRO como primera fila (type=note) con media::image.
+    - Aplica 'relevant' para reglas de visibilidad añadidas desde UI (además de los que ya traiga cada pregunta).
     - Aplica 'fin temprano' agregando NOT(condición) a todas las preguntas posteriores.
     - Propaga 'choice_filter' y 'appearance' si existen.
     - choices admite columnas extra (p.ej. canton_key).
@@ -532,16 +600,23 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     survey_rows = []
     choices_rows = []
 
+    # --- 0) Fila de introducción ---
+    survey_rows.append({
+        "type": "note",
+        "name": "intro",
+        "label": f"<b>{form_title}</b><br/>Dirigido a: <i>{dirigido_a}</i><br/><br/>{INTRO_RESUMIDA}",
+        "media::image": logo_media_name
+    })
+
     # Índices por name para calcular "posteriores"
     idx_by_name = {q["name"]: i for i, q in enumerate(preguntas)}
 
-    # 1) Recolectar reglas de visibilidad por target
+    # 1) Recolectar reglas de visibilidad por target (desde UI extra)
     vis_by_target = {}
     for r in reglas_vis:
         vis_by_target.setdefault(r["target"], []).append({"src": r["src"], "op": r.get("op","="), "values": r.get("values", [])})
 
     # 2) Precalcular condiciones de finalización (por índice)
-    #    Para cada regla fin: cond_expr; luego NOT(cond) se aplica a posteriores
     fin_conds = []  # [(index_src, cond_expr)]
     for r in reglas_fin:
         cond = build_relevant_expr([{"src": r["src"], "op": r.get("op","="), "values": r.get("values",[])}])
@@ -556,17 +631,16 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
         required = "yes" if q.get("required") else None
         appearance = q.get("appearance") or None
         choice_filter = q.get("choice_filter") or None
-        manual_relevant = q.get("relevant") or None
+        manual_relevant = q.get("relevant") or None  # embebido
 
         x_type, default_app, list_name = map_tipo_to_xlsform(tipo_ui, name)
         if default_app and not appearance:
             appearance = default_app
 
-        # Relevant a partir de reglas de visibilidad
+        # Relevant a partir de reglas adicionales (UI)
         rel_auto = build_relevant_expr(vis_by_target.get(name, []))
 
-        # Relevant por "fin temprano": si hay alguna regla cuyo index_src < i, entonces
-        # la pregunta i solo es visible si NO se cumple ninguna de esas condiciones previas.
+        # Fin temprano: NOT(cond) para todo lo posterior
         not_conds = []
         for idx_src, cond in fin_conds:
             if idx_src < i:
@@ -575,7 +649,6 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
         if not_conds:
             fin_expr = "(" + " and ".join([c for c in not_conds if c]) + ")"
 
-        # Combinar relevant: manual (> auto > fin) con AND
         relevant_parts = [p for p in [manual_relevant, rel_auto, fin_expr] if p]
         relevant_final = None
         if relevant_parts:
@@ -612,15 +685,15 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     # 4) Agregar choices extendidos (ej. distritos con canton_key)
     if "choices_ext_rows" in st.session_state:
         for r in st.session_state.choices_ext_rows:
-            choices_rows.append(dict(r))  # incluye columnas extra
+            choices_rows.append(dict(r))
 
     # 5) DataFrames
-    # survey: unimos todas las posibles columnas usadas
+    # survey: columnas posibles (+ media::image)
     survey_cols_all = set()
     for r in survey_rows:
         survey_cols_all.update(r.keys())
-    survey_cols = [c for c in ["type","name","label","required","appearance","choice_filter","relevant"] if c in survey_cols_all]
-    # más cualquier otra columna eventual:
+    base_cols = ["type","name","label","required","appearance","choice_filter","relevant","media::image"]
+    survey_cols = [c for c in base_cols if c in survey_cols_all]
     for k in sorted(survey_cols_all):
         if k not in survey_cols:
             survey_cols.append(k)
@@ -630,7 +703,6 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     choices_cols_all = set()
     for r in choices_rows:
         choices_cols_all.update(r.keys())
-    # asegurar orden base + extras
     base_choice_cols = ["list_name","name","label"]
     for extra in sorted(choices_cols_all):
         if extra not in base_choice_cols:
@@ -679,7 +751,7 @@ st.subheader("📦 Generar XLSForm (Excel) para Survey123")
 
 st.caption("""
 El archivo incluirá:
-- **survey** con tipos XLSForm, `relevant`, `choice_filter`, `appearance` cuando aplique,
+- **survey** con tipos, `relevant`, `choice_filter`, `appearance`, y una primera fila **note** con introducción + `media::image`,
 - **choices** con listas (y columnas extra como `canton_key` si usas cascadas),
 - **settings** con título, versión e idioma.
 """)
@@ -690,7 +762,6 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
         if len(names) != len(set(names)):
             st.error("Hay 'name' duplicados. Edita las preguntas para que cada 'name' sea único.")
         else:
-            # Construcción con reglas
             df_survey, df_choices, df_settings = construir_xlsform(
                 st.session_state.preguntas,
                 form_title=form_title.strip() or "Encuesta",
@@ -715,11 +786,25 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
             nombre_archivo = slugify_name(form_title or "encuesta") + "_xlsform.xlsx"
             descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo=nombre_archivo)
 
+            # Botón para descargar el logo si fue subido (para carpeta media en Survey123)
+            if st.session_state.get("_logo_bytes"):
+                st.download_button(
+                    "📥 Descargar logo para carpeta media",
+                    data=st.session_state["_logo_bytes"],
+                    file_name=logo_media_name,
+                    mime="image/png",
+                    use_container_width=True
+                )
+            else:
+                st.caption(f"Usando logo por defecto: **{st.session_state.get('_logo_name','001.png')}**. "
+                           "Cópialo a la carpeta **media** del proyecto en Survey123 Connect y respeta el mismo nombre.")
+
             st.info("""
 **Publicar en Survey123**
-1) Abre **ArcGIS Survey123 Connect** (o el diseñador web).
-2) Crea **nueva encuesta desde archivo** y selecciona el XLSForm descargado.
-3) Publica. Las condiciones (`relevant`) y las cascadas (`choice_filter`) se aplican automáticamente.
+1) Abre **ArcGIS Survey123 Connect**.
+2) Crea una **encuesta desde archivo** y selecciona el XLSForm descargado.
+3) Copia el PNG del logo a la carpeta **media** del proyecto (mismo nombre que `media::image`).
+4) Publica. Las condiciones (`relevant`) y las cascadas (`choice_filter`) se aplican automáticamente.
 """)
     except Exception as e:
         st.error(f"Ocurrió un error al generar el XLSForm: {e}")
@@ -731,8 +816,5 @@ st.markdown("""
 ---
 ✅ **Listo para Survey123:** admite `relevant`, `choice_filter`, `appearance`, tipos `text`, `integer`, `date`, `time`, `geopoint`,
 `select_one` y `select_multiple`.  
-🧪 Tip: Usa el panel **Condicionales** para:
-- Mostrar una pregunta solo si *${pregunta} = 'valor'* o *selected(${pregunta}, 'valor')*.
-- **Finalizar temprano** ocultando lo que sigue cuando se cumpla una condición (efecto fin).
-- Inserta el ejemplo **Cantón→Distrito** y edita la lista a tu gusto.
+🧪 Tip: Puedes seguir usando el panel **Condicionales** para reglas extra además de las ya embebidas en las preguntas.
 """)
