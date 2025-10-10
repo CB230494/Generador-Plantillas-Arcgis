@@ -811,9 +811,9 @@ st.markdown("""
 """)
 # ==========================================================================================
 # NUEVO: Descarga Word (.docx) y PDF editable (AcroForm) del formulario con condicionales
-# (Página 1 + Páginas 3 y 4 — se excluye Página 2 "Datos")
+# (Página 1 + Páginas 3 y 4; texto siempre negro; portada más grande; títulos de sección)
 # ==========================================================================================
-from typing import List, Dict, Tuple
+from typing import List, Dict
 import os
 
 try:
@@ -829,7 +829,7 @@ try:
     from reportlab.lib.units import cm
     from reportlab.lib.utils import ImageReader
     from reportlab.pdfbase.pdfmetrics import stringWidth
-    from reportlab.lib.colors import HexColor
+    from reportlab.lib.colors import HexColor, black
 except Exception:
     canvas = None
 
@@ -887,18 +887,20 @@ def _wrap_text_lines(text: str, font_name: str, font_size: float, max_width: flo
 
 
 # ---------------------- Páginas incluidas (solo 3 y 4) ----------------------
-_ALLOWED_P3_P4 = {
-    # Página 3
+P3_NAMES = {
     "mantiene_info","tipo_actividad","nombre_estructura","quienes",
-    "modus_operandi","zona_insegura","por_que_insegura",
-    # Página 4
+    "modus_operandi","zona_insegura","por_que_insegura"
+}
+P4_NAMES = {
     "recurso_falta","condiciones_aptas","condiciones_mejorar",
     "falta_capacitacion","areas_capacitacion","motivado","motivo_no",
     "anomalias","detalle_anomalias","oficiales_relacionados",
     "describe_situacion","medio_contacto"
 }
+ALLOWED_P3_P4 = P3_NAMES | P4_NAMES
+
 def _only_pages_3_4(preguntas: List[Dict]) -> List[Dict]:
-    return [q for q in preguntas if q.get("name") in _ALLOWED_P3_P4]
+    return [q for q in preguntas if q.get("name") in ALLOWED_P3_P4]
 
 
 # ---------------------- EXPORTACIÓN WORD ----------------------
@@ -908,45 +910,91 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
         return
 
     preguntas_use = _only_pages_3_4(preguntas)
+
     doc = Document()
 
-    # Título
+    # Título grande y centrado (negro)
     p = doc.add_paragraph()
     run = p.add_run(form_title)
     run.bold = True
+    run.font.size = Pt(22)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    run.font.size = Pt(16)
 
     # Logo (subido o fallback 001.png)
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img_buf = BytesIO(logo_b)
-            doc.add_picture(img_buf, width=Inches(1.8))
+            doc.add_picture(img_buf, width=Inches(2.2))
         except Exception:
             pass
 
-    # Introducción (Página 1)
-    doc.add_paragraph(intro)
+    # Introducción (más grande, spacing)
+    intro_p = doc.add_paragraph(intro)
+    intro_p.runs[0].font.size = Pt(12)
+    intro_p_format = intro_p.paragraph_format
+    intro_p_format.space_before = Pt(6)
+    intro_p_format.space_after = Pt(12)
+    # (color por defecto: negro)
 
-    # Preguntas (Páginas 3 y 4)
-    for i, q in enumerate(preguntas_use, start=1):
+    # --- Sección Página 3 ---
+    sec3 = doc.add_paragraph("Información de Interés Policial (Página 3)")
+    sec3.runs[0].bold = True
+    sec3.runs[0].font.size = Pt(16)
+
+    i = 1
+    for q in preguntas_use:
+        if q.get("name") not in P3_NAMES:
+            continue
         doc.add_paragraph("")  # separador
         h = doc.add_paragraph(f"{i}. {q['label']}")
         h.runs[0].bold = True
+        h.runs[0].font.size = Pt(12)
 
         cond_txt = _build_cond_text(q["name"], reglas_vis)
         if cond_txt:
-            doc.add_paragraph(cond_txt)
+            cpara = doc.add_paragraph(cond_txt)
+            cpara.runs[0].font.size = Pt(9)
 
         if q["tipo_ui"] in ("Selección única", "Selección múltiple") and q.get("opciones"):
             opts = ", ".join(q["opciones"])
-            doc.add_paragraph(f"Opciones: {opts}")
+            opara = doc.add_paragraph(f"Opciones: {opts}")
+            opara.runs[0].font.size = Pt(11)
 
         obs = doc.add_paragraph("Observaciones:")
         obs.runs[0].italic = True
         for _ in range(3):
             doc.add_paragraph("")
+        i += 1
+
+    # --- Sección Página 4 ---
+    sec4 = doc.add_paragraph("Información de Interés Interno (Página 4)")
+    sec4.runs[0].bold = True
+    sec4.runs[0].font.size = Pt(16)
+
+    for q in preguntas_use:
+        if q.get("name") not in P4_NAMES:
+            continue
+        doc.add_paragraph("")
+        h = doc.add_paragraph(f"{i}. {q['label']}")
+        h.runs[0].bold = True
+        h.runs[0].font.size = Pt(12)
+
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        if cond_txt:
+            cpara = doc.add_paragraph(cond_txt)
+            cpara.runs[0].font.size = Pt(9)
+
+        if q["tipo_ui"] in ("Selección única", "Selección múltiple") and q.get("opciones"):
+            opts = ", ".join(q["opciones"])
+            opara = doc.add_paragraph(f"Opciones: {opts}")
+            opara.runs[0].font.size = Pt(11)
+
+        obs = doc.add_paragraph("Observaciones:")
+        obs.runs[0].italic = True
+        for _ in range(3):
+            doc.add_paragraph("")
+        i += 1
 
     buf = BytesIO()
     doc.save(buf)
@@ -972,11 +1020,15 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     margin = 2 * cm
     max_text_w = PAGE_W - 2 * margin
 
-    title_font, title_size = "Helvetica-Bold", 14
+    # Tipografías (todo negro)
+    title_font, title_size = "Helvetica-Bold", 24     # título más grande
+    intro_font, intro_size = "Helvetica", 12          # intro más grande
+    intro_line_h = 18                                  # más interlineado
+    sec_font, sec_size = "Helvetica-Bold", 14         # títulos de sección
     label_font, label_size = "Helvetica", 11
     cond_font, cond_size = "Helvetica-Oblique", 9
-    intro_font, intro_size = "Helvetica", 10
 
+    # Campos (mantengo relleno suave de color; texto en negro)
     fills = [HexColor("#E6F4EA"), HexColor("#E7F0FE"), HexColor("#FDECEA")]
     borders = [HexColor("#1E8E3E"), HexColor("#1A73E8"), HexColor("#D93025")]
 
@@ -988,45 +1040,122 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle(form_title)
 
-    # -------------------- PÁGINA 1: INTRODUCCIÓN --------------------
+    # -------------------- PÁGINA 1: PORTADA AMPLIA --------------------
+    # Logo centrado (más grande)
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img = ImageReader(BytesIO(logo_b))
-            logo_w, logo_h = 90, 60
+            logo_w, logo_h = 140, 95
             c.drawImage(img, (PAGE_W - logo_w) / 2, y - logo_h, width=logo_w, height=logo_h,
                         preserveAspectRatio=True, mask='auto')
-            y -= (logo_h + 10)
+            y -= (logo_h + 20)
         except Exception:
             pass
 
+    # Título grande, centrado
+    c.setFillColor(black)
     c.setFont(title_font, title_size)
     c.drawCentredString(PAGE_W / 2, y, form_title)
-    y -= 16
+    y -= 26
 
+    # Introducción más grande y con mayor interlineado
     c.setFont(intro_font, intro_size)
     intro_lines = _wrap_text_lines(intro, intro_font, intro_size, max_text_w)
     for line in intro_lines:
-        if y < margin + 60:
-            c.showPage(); y = PAGE_H - margin; c.setFont(intro_font, intro_size)
+        if y < margin + 80:
+            c.showPage(); y = PAGE_H - margin
+            c.setFillColor(black)
+            c.setFont(intro_font, intro_size)
         c.drawString(margin, y, line)
-        y -= line_h
+        y -= intro_line_h
 
-    # Comenzar preguntas en nueva página
+    # Salto para comenzar preguntas
     c.showPage()
     y = PAGE_H - margin
+    c.setFillColor(black)
 
-    # -------------------- PÁGINAS 3 y 4: PREGUNTAS --------------------
+    # -------------------- SECCIÓN PÁGINA 3 --------------------
+    c.setFont(sec_font, sec_size)
+    c.drawString(margin, y, "Información de Interés Policial (Página 3)")
+    y -= (line_h + 6)
     c.setFont(label_font, label_size)
-    color_idx = 0
 
-    for i, q in enumerate(preguntas_use, start=1):
+    color_idx = 0
+    i = 1
+    for q in preguntas_use:
+        if q.get("name") not in P3_NAMES:
+            continue
+
         # Etiqueta envuelta
         label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
         needed = line_h * len(label_lines) + field_h + 14
-
         if y - needed < margin:
-            c.showPage(); y = PAGE_H - margin; c.setFont(label_font, label_size)
+            c.showPage(); y = PAGE_H - margin
+            c.setFillColor(black)
+            c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial (Página 3)")
+            y -= (line_h + 6); c.setFont(label_font, label_size)
+
+        for line in label_lines:
+            c.drawString(margin, y, line)
+            y -= line_h
+
+        # Condición (si existe)
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        if cond_txt:
+            cond_lines = _wrap_text_lines(cond_txt, cond_font, cond_size, max_text_w)
+            c.setFont(cond_font, cond_size)
+            for cl in cond_lines:
+                if y - line_h < margin:
+                    c.showPage(); y = PAGE_H - margin
+                    c.setFillColor(black)
+                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial (Página 3)")
+                    y -= (line_h + 6); c.setFont(cond_font, cond_size)
+                c.drawString(margin, y, cl)
+                y -= line_h
+            c.setFont(label_font, label_size)
+
+        # Rectángulo del campo (colores), luego campo editable
+        fill_color = fills[color_idx % len(fills)]
+        border_color = borders[color_idx % len(borders)]
+        color_idx += 1
+
+        c.setFillColor(fill_color)
+        c.setStrokeColor(border_color)
+        c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
+        c.setFillColor(black)  # volver texto a negro
+
+        fname = f"campo_obs_{i}"
+        c.acroForm.textfield(
+            name=fname,
+            tooltip=f"Observaciones para: {q['name']}",
+            x=margin, y=y - field_h,
+            width=max_text_w, height=field_h,
+            borderWidth=1, borderStyle='solid',
+            forceBorder=True, fieldFlags=4096, value=""
+        )
+        y -= (field_h + 24)
+        i += 1
+
+    # -------------------- SECCIÓN PÁGINA 4 --------------------
+    if y < margin + 80:
+        c.showPage(); y = PAGE_H - margin; c.setFillColor(black)
+    c.setFont(sec_font, sec_size)
+    c.drawString(margin, y, "Información de Interés Interno (Página 4)")
+    y -= (line_h + 6)
+    c.setFont(label_font, label_size)
+
+    for q in preguntas_use:
+        if q.get("name") not in P4_NAMES:
+            continue
+
+        label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
+        needed = line_h * len(label_lines) + field_h + 14
+        if y - needed < margin:
+            c.showPage(); y = PAGE_H - margin
+            c.setFillColor(black)
+            c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno (Página 4)")
+            y -= (line_h + 6); c.setFont(label_font, label_size)
 
         for line in label_lines:
             c.drawString(margin, y, line)
@@ -1038,18 +1167,20 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             c.setFont(cond_font, cond_size)
             for cl in cond_lines:
                 if y - line_h < margin:
-                    c.showPage(); y = PAGE_H - margin; c.setFont(cond_font, cond_size)
+                    c.showPage(); y = PAGE_H - margin
+                    c.setFillColor(black)
+                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno (Página 4)")
+                    y -= (line_h + 6); c.setFont(cond_font, cond_size)
                 c.drawString(margin, y, cl)
                 y -= line_h
             c.setFont(label_font, label_size)
 
-        fill_color = fills[color_idx % len(fills)]
-        border_color = borders[color_idx % len(borders)]
-        color_idx += 1
-
+        fill_color = fills[(i-1) % len(fills)]
+        border_color = borders[(i-1) % len(borders)]
         c.setFillColor(fill_color)
         c.setStrokeColor(border_color)
         c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
+        c.setFillColor(black)
 
         fname = f"campo_obs_{i}"
         c.acroForm.textfield(
@@ -1060,8 +1191,8 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             borderWidth=1, borderStyle='solid',
             forceBorder=True, fieldFlags=4096, value=""
         )
-
         y -= (field_h + 24)
+        i += 1
 
     c.showPage()
     c.save()
