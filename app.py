@@ -811,7 +811,7 @@ st.markdown("""
 """)
 # ==========================================================================================
 # NUEVO: Descarga Word (.docx) y PDF editable (AcroForm) del formulario con condicionales
-# (Página 1 + Páginas 3 y 4; texto siempre negro; portada más grande; títulos de sección)
+# (Página 1 + Páginas 3 y 4; texto siempre negro; portada amplia; sin “(Página X)”)
 # ==========================================================================================
 from typing import List, Dict
 import os
@@ -920,25 +920,24 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     run.font.size = Pt(22)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Logo (subido o fallback 001.png)
+    # Logo (subido o fallback 001.png) MÁS GRANDE
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img_buf = BytesIO(logo_b)
-            doc.add_picture(img_buf, width=Inches(2.2))
+            doc.add_picture(img_buf, width=Inches(2.6))  # antes 2.2
         except Exception:
             pass
 
-    # Introducción (más grande, spacing)
+    # Introducción (un poco más grande y con espaciado)
     intro_p = doc.add_paragraph(intro)
     intro_p.runs[0].font.size = Pt(12)
-    intro_p_format = intro_p.paragraph_format
-    intro_p_format.space_before = Pt(6)
-    intro_p_format.space_after = Pt(12)
-    # (color por defecto: negro)
+    pf = intro_p.paragraph_format
+    pf.space_before = Pt(6)
+    pf.space_after = Pt(12)
 
-    # --- Sección Página 3 ---
-    sec3 = doc.add_paragraph("Información de Interés Policial (Página 3)")
+    # --- Sección Información de Interés Policial ---
+    sec3 = doc.add_paragraph("Información de Interés Policial")
     sec3.runs[0].bold = True
     sec3.runs[0].font.size = Pt(16)
 
@@ -946,7 +945,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     for q in preguntas_use:
         if q.get("name") not in P3_NAMES:
             continue
-        doc.add_paragraph("")  # separador
+        doc.add_paragraph("")
         h = doc.add_paragraph(f"{i}. {q['label']}")
         h.runs[0].bold = True
         h.runs[0].font.size = Pt(12)
@@ -967,8 +966,8 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
             doc.add_paragraph("")
         i += 1
 
-    # --- Sección Página 4 ---
-    sec4 = doc.add_paragraph("Información de Interés Interno (Página 4)")
+    # --- Sección Información de Interés Interno ---
+    sec4 = doc.add_paragraph("Información de Interés Interno")
     sec4.runs[0].bold = True
     sec4.runs[0].font.size = Pt(16)
 
@@ -1021,14 +1020,14 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     max_text_w = PAGE_W - 2 * margin
 
     # Tipografías (todo negro)
-    title_font, title_size = "Helvetica-Bold", 24     # título más grande
-    intro_font, intro_size = "Helvetica", 12          # intro más grande
-    intro_line_h = 18                                  # más interlineado
-    sec_font, sec_size = "Helvetica-Bold", 14         # títulos de sección
+    title_font, title_size = "Helvetica-Bold", 24
+    intro_font, intro_size = "Helvetica", 12
+    intro_line_h = 18
+    sec_font, sec_size = "Helvetica-Bold", 14
     label_font, label_size = "Helvetica", 11
     cond_font, cond_size = "Helvetica-Oblique", 9
 
-    # Campos (mantengo relleno suave de color; texto en negro)
+    # Campos (fondo suave; texto siempre negro)
     fills = [HexColor("#E6F4EA"), HexColor("#E7F0FE"), HexColor("#FDECEA")]
     borders = [HexColor("#1E8E3E"), HexColor("#1A73E8"), HexColor("#D93025")]
 
@@ -1041,23 +1040,27 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     c.setTitle(form_title)
 
     # -------------------- PÁGINA 1: PORTADA AMPLIA --------------------
-    # Logo centrado (más grande)
+    # Logo centrado (AÚN MÁS GRANDE)
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img = ImageReader(BytesIO(logo_b))
-            logo_w, logo_h = 140, 95
+            logo_w, logo_h = 160, 115   # (↑) más grande
             c.drawImage(img, (PAGE_W - logo_w) / 2, y - logo_h, width=logo_w, height=logo_h,
                         preserveAspectRatio=True, mask='auto')
-            y -= (logo_h + 20)
+            y -= (logo_h + 24)
         except Exception:
             pass
 
-    # Título grande, centrado
+    # Título grande, **ENVUELTO** para nunca salirse de márgenes
     c.setFillColor(black)
+    title_lines = _wrap_text_lines(form_title, title_font, title_size, max_text_w)
+    if not title_lines:
+        title_lines = [form_title]
     c.setFont(title_font, title_size)
-    c.drawCentredString(PAGE_W / 2, y, form_title)
-    y -= 26
+    for tl in title_lines:
+        c.drawCentredString(PAGE_W / 2, y, tl)
+        y -= 26  # spacing entre líneas del título
 
     # Introducción más grande y con mayor interlineado
     c.setFont(intro_font, intro_size)
@@ -1075,9 +1078,9 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     y = PAGE_H - margin
     c.setFillColor(black)
 
-    # -------------------- SECCIÓN PÁGINA 3 --------------------
+    # -------------------- SECCIÓN: Información de Interés Policial --------------------
     c.setFont(sec_font, sec_size)
-    c.drawString(margin, y, "Información de Interés Policial (Página 3)")
+    c.drawString(margin, y, "Información de Interés Policial")
     y -= (line_h + 6)
     c.setFont(label_font, label_size)
 
@@ -1093,7 +1096,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         if y - needed < margin:
             c.showPage(); y = PAGE_H - margin
             c.setFillColor(black)
-            c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial (Página 3)")
+            c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial")
             y -= (line_h + 6); c.setFont(label_font, label_size)
 
         for line in label_lines:
@@ -1109,13 +1112,13 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
                 if y - line_h < margin:
                     c.showPage(); y = PAGE_H - margin
                     c.setFillColor(black)
-                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial (Página 3)")
+                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial")
                     y -= (line_h + 6); c.setFont(cond_font, cond_size)
                 c.drawString(margin, y, cl)
                 y -= line_h
             c.setFont(label_font, label_size)
 
-        # Rectángulo del campo (colores), luego campo editable
+        # Rectángulo del campo y campo editable
         fill_color = fills[color_idx % len(fills)]
         border_color = borders[color_idx % len(borders)]
         color_idx += 1
@@ -1123,7 +1126,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         c.setFillColor(fill_color)
         c.setStrokeColor(border_color)
         c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
-        c.setFillColor(black)  # volver texto a negro
+        c.setFillColor(black)
 
         fname = f"campo_obs_{i}"
         c.acroForm.textfield(
@@ -1137,11 +1140,11 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         y -= (field_h + 24)
         i += 1
 
-    # -------------------- SECCIÓN PÁGINA 4 --------------------
+    # -------------------- SECCIÓN: Información de Interés Interno --------------------
     if y < margin + 80:
         c.showPage(); y = PAGE_H - margin; c.setFillColor(black)
     c.setFont(sec_font, sec_size)
-    c.drawString(margin, y, "Información de Interés Interno (Página 4)")
+    c.drawString(margin, y, "Información de Interés Interno")
     y -= (line_h + 6)
     c.setFont(label_font, label_size)
 
@@ -1154,7 +1157,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         if y - needed < margin:
             c.showPage(); y = PAGE_H - margin
             c.setFillColor(black)
-            c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno (Página 4)")
+            c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno")
             y -= (line_h + 6); c.setFont(label_font, label_size)
 
         for line in label_lines:
@@ -1169,7 +1172,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
                 if y - line_h < margin:
                     c.showPage(); y = PAGE_H - margin
                     c.setFillColor(black)
-                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno (Página 4)")
+                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno")
                     y -= (line_h + 6); c.setFont(cond_font, cond_size)
                 c.drawString(margin, y, cl)
                 y -= line_h
@@ -1229,6 +1232,7 @@ with col_p:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
+
 
 
 
