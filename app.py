@@ -811,26 +811,30 @@ st.markdown("""
 """)
 # ==========================================================================================
 # NUEVO: Descarga Word (.docx) y PDF editable (AcroForm) del formulario con condicionales
+# (Página 1 + Páginas 3 y 4 — se excluye Página 2 "Datos")
 # ==========================================================================================
-from typing import List, Dict, Tuple  # solo para type hints locales
+from typing import List, Dict, Tuple
+import os
+
 try:
     from docx import Document
     from docx.shared import Pt, Inches
     from docx.enum.text import WD_ALIGN_PARAGRAPH
 except Exception:
-    Document = None  # si no está instalado, mostramos aviso al usar
+    Document = None
 
 try:
     from reportlab.pdfgen import canvas
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import cm
     from reportlab.lib.utils import ImageReader
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    from reportlab.lib.colors import HexColor
 except Exception:
     canvas = None
 
 
 def _build_cond_text(qname: str, reglas_vis: List[Dict]) -> str:
-    """Texto legible de condicionales que activan la pregunta qname."""
     rels = [r for r in reglas_vis if r.get("target") == qname]
     if not rels:
         return ""
@@ -843,11 +847,67 @@ def _build_cond_text(qname: str, reglas_vis: List[Dict]) -> str:
     return "Condición: se muestra si " + " OR ".join(parts)
 
 
+def _get_logo_bytes_fallback() -> bytes | None:
+    if st.session_state.get("_logo_bytes"):
+        return st.session_state["_logo_bytes"]
+    try:
+        with open("001.png", "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+
+
+def _wrap_text_lines(text: str, font_name: str, font_size: float, max_width: float) -> List[str]:
+    if not text:
+        return []
+    words = text.split()
+    lines, current = [], ""
+    for w in words:
+        test = (current + " " + w).strip()
+        if stringWidth(test, font_name, font_size) <= max_width:
+            current = test
+        else:
+            if current:
+                lines.append(current)
+            if stringWidth(w, font_name, font_size) > max_width:
+                chunk = ""
+                for ch in w:
+                    if stringWidth(chunk + ch, font_name, font_size) <= max_width:
+                        chunk += ch
+                    else:
+                        if chunk:
+                            lines.append(chunk)
+                        chunk = ch
+                current = chunk
+            else:
+                current = w
+    if current:
+        lines.append(current)
+    return lines
+
+
+# ---------------------- Páginas incluidas (solo 3 y 4) ----------------------
+_ALLOWED_P3_P4 = {
+    # Página 3
+    "mantiene_info","tipo_actividad","nombre_estructura","quienes",
+    "modus_operandi","zona_insegura","por_que_insegura",
+    # Página 4
+    "recurso_falta","condiciones_aptas","condiciones_mejorar",
+    "falta_capacitacion","areas_capacitacion","motivado","motivo_no",
+    "anomalias","detalle_anomalias","oficiales_relacionados",
+    "describe_situacion","medio_contacto"
+}
+def _only_pages_3_4(preguntas: List[Dict]) -> List[Dict]:
+    return [q for q in preguntas if q.get("name") in _ALLOWED_P3_P4]
+
+
 # ---------------------- EXPORTACIÓN WORD ----------------------
 def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
     if Document is None:
         st.error("Falta dependencia: instala `python-docx` para generar Word.")
         return
+
+    preguntas_use = _only_pages_3_4(preguntas)
     doc = Document()
 
     # Título
@@ -857,19 +917,20 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
     run.font.size = Pt(16)
 
-    # Logo (si existe)
-    if st.session_state.get("_logo_bytes"):
+    # Logo (subido o fallback 001.png)
+    logo_b = _get_logo_bytes_fallback()
+    if logo_b:
         try:
-            img_buf = BytesIO(st.session_state["_logo_bytes"])
-            doc.add_picture(img_buf, width=Inches(1.5))
+            img_buf = BytesIO(logo_b)
+            doc.add_picture(img_buf, width=Inches(1.8))
         except Exception:
             pass
 
-    # Introducción
+    # Introducción (Página 1)
     doc.add_paragraph(intro)
 
-    # Preguntas + espacio para observaciones (párrafos libres)
-    for i, q in enumerate(preguntas, start=1):
+    # Preguntas (Páginas 3 y 4)
+    for i, q in enumerate(preguntas_use, start=1):
         doc.add_paragraph("")  # separador
         h = doc.add_paragraph(f"{i}. {q['label']}")
         h.runs[0].bold = True
@@ -878,12 +939,10 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
         if cond_txt:
             doc.add_paragraph(cond_txt)
 
-        # Opciones (si aplica)
         if q["tipo_ui"] in ("Selección única", "Selección múltiple") and q.get("opciones"):
             opts = ", ".join(q["opciones"])
             doc.add_paragraph(f"Opciones: {opts}")
 
-        # Observaciones (área libre de escritura)
         obs = doc.add_paragraph("Observaciones:")
         obs.runs[0].italic = True
         for _ in range(3):
@@ -907,88 +966,101 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         st.error("Falta dependencia: instala `reportlab` para generar PDF.")
         return
 
+    preguntas_use = _only_pages_3_4(preguntas)
+
     PAGE_W, PAGE_H = A4
     margin = 2 * cm
-    line_h = 14      # altura de texto
-    field_h = 60     # alto de cada campo de texto (multilínea)
+    max_text_w = PAGE_W - 2 * margin
+
+    title_font, title_size = "Helvetica-Bold", 14
+    label_font, label_size = "Helvetica", 11
+    cond_font, cond_size = "Helvetica-Oblique", 9
+    intro_font, intro_size = "Helvetica", 10
+
+    fills = [HexColor("#E6F4EA"), HexColor("#E7F0FE"), HexColor("#FDECEA")]
+    borders = [HexColor("#1E8E3E"), HexColor("#1A73E8"), HexColor("#D93025")]
+
+    field_h = 60
+    line_h = 14
     y = PAGE_H - margin
 
     buf = BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle(form_title)
 
-    # Título
-    c.setFont("Helvetica-Bold", 14)
-    c.drawCentredString(PAGE_W / 2, y, form_title)
-    y -= 16
-
-    # Logo si existe
-    if st.session_state.get("_logo_bytes"):
+    # -------------------- PÁGINA 1: INTRODUCCIÓN --------------------
+    logo_b = _get_logo_bytes_fallback()
+    if logo_b:
         try:
-            img = ImageReader(BytesIO(st.session_state["_logo_bytes"]))
-            c.drawImage(img, margin, y - 40, width=60, height=40, preserveAspectRatio=True, mask='auto')
+            img = ImageReader(BytesIO(logo_b))
+            logo_w, logo_h = 90, 60
+            c.drawImage(img, (PAGE_W - logo_w) / 2, y - logo_h, width=logo_w, height=logo_h,
+                        preserveAspectRatio=True, mask='auto')
+            y -= (logo_h + 10)
         except Exception:
             pass
 
-    # Introducción (envuelta manualmente)
-    c.setFont("Helvetica", 10)
-    intro_wrapped = []
-    max_chars = 95
-    for i in range(0, len(intro), max_chars):
-        intro_wrapped.append(intro[i:i + max_chars])
-    y -= 12
-    for line in intro_wrapped:
-        if y < margin + 120:
-            c.showPage()
-            y = PAGE_H - margin
-            c.setFont("Helvetica", 10)
+    c.setFont(title_font, title_size)
+    c.drawCentredString(PAGE_W / 2, y, form_title)
+    y -= 16
+
+    c.setFont(intro_font, intro_size)
+    intro_lines = _wrap_text_lines(intro, intro_font, intro_size, max_text_w)
+    for line in intro_lines:
+        if y < margin + 60:
+            c.showPage(); y = PAGE_H - margin; c.setFont(intro_font, intro_size)
         c.drawString(margin, y, line)
         y -= line_h
 
-    # Campos editables (uno por pregunta; multilínea con fieldFlags=4096)
-    c.setFont("Helvetica", 11)
-    for i, q in enumerate(preguntas, start=1):
-        label = f"{i}. {q['label']}"
-        cond_txt = _build_cond_text(q["name"], reglas_vis)
+    # Comenzar preguntas en nueva página
+    c.showPage()
+    y = PAGE_H - margin
 
-        # espacio necesario; salto de página si no alcanza
-        needed = line_h + (line_h if cond_txt else 0) + field_h + 10
+    # -------------------- PÁGINAS 3 y 4: PREGUNTAS --------------------
+    c.setFont(label_font, label_size)
+    color_idx = 0
+
+    for i, q in enumerate(preguntas_use, start=1):
+        # Etiqueta envuelta
+        label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
+        needed = line_h * len(label_lines) + field_h + 14
+
         if y - needed < margin:
-            c.showPage()
-            y = PAGE_H - margin
-            c.setFont("Helvetica", 11)
+            c.showPage(); y = PAGE_H - margin; c.setFont(label_font, label_size)
 
-        # etiqueta
-        c.drawString(margin, y, label)
-        y -= line_h
-
-        # condición visible (si aplica)
-        if cond_txt:
-            c.setFont("Helvetica-Oblique", 9)
-            c.drawString(margin, y, cond_txt)
-            c.setFont("Helvetica", 11)
+        for line in label_lines:
+            c.drawString(margin, y, line)
             y -= line_h
 
-        # campo de texto: multilínea con flag 4096; borde sólido (compatibilidad amplia)
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        if cond_txt:
+            cond_lines = _wrap_text_lines(cond_txt, cond_font, cond_size, max_text_w)
+            c.setFont(cond_font, cond_size)
+            for cl in cond_lines:
+                if y - line_h < margin:
+                    c.showPage(); y = PAGE_H - margin; c.setFont(cond_font, cond_size)
+                c.drawString(margin, y, cl)
+                y -= line_h
+            c.setFont(label_font, label_size)
+
+        fill_color = fills[color_idx % len(fills)]
+        border_color = borders[color_idx % len(borders)]
+        color_idx += 1
+
+        c.setFillColor(fill_color)
+        c.setStrokeColor(border_color)
+        c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
+
         fname = f"campo_obs_{i}"
         c.acroForm.textfield(
             name=fname,
             tooltip=f"Observaciones para: {q['name']}",
-            x=margin,
-            y=y - field_h,
-            width=PAGE_W - 2 * margin,
-            height=field_h,
-            borderWidth=1,
-            borderStyle='solid',   # <- evitar KeyError en versiones sin 'underline'
-            forceBorder=True,
-            fieldFlags=4096,       # MULTILINE flag
-            value=""
+            x=margin, y=y - field_h,
+            width=max_text_w, height=field_h,
+            borderWidth=1, borderStyle='solid',
+            forceBorder=True, fieldFlags=4096, value=""
         )
 
-        # ayuda
-        c.setFont("Helvetica-Oblique", 9)
-        c.drawString(margin, y - field_h - 10, "Escriba sus observaciones aquí (multilínea, sin límite visible).")
-        c.setFont("Helvetica", 11)
         y -= (field_h + 24)
 
     c.showPage()
@@ -1026,7 +1098,6 @@ with col_p:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
-
 
 
 
