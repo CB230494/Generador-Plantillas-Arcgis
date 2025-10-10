@@ -868,7 +868,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     # Introducción
     doc.add_paragraph(intro)
 
-    # Preguntas + espacio para observaciones (párrafos libres, “infinitos”)
+    # Preguntas + espacio para observaciones (párrafos libres)
     for i, q in enumerate(preguntas, start=1):
         doc.add_paragraph("")  # separador
         h = doc.add_paragraph(f"{i}. {q['label']}")
@@ -886,7 +886,6 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
         # Observaciones (área libre de escritura)
         obs = doc.add_paragraph("Observaciones:")
         obs.runs[0].italic = True
-        # Añadimos varias líneas en blanco (el usuario puede escribir sobre ellas)
         for _ in range(3):
             doc.add_paragraph("")
 
@@ -970,7 +969,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             c.setFont("Helvetica", 11)
             y -= line_h
 
-        # campo de texto: multilínea con flag 4096; borde subrayado
+        # campo de texto: multilínea con flag 4096; borde sólido (compatibilidad amplia)
         fname = f"campo_obs_{i}"
         c.acroForm.textfield(
             name=fname,
@@ -979,9 +978,10 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             y=y - field_h,
             width=PAGE_W - 2 * margin,
             height=field_h,
-            borderStyle='underline',   # estilo válido
+            borderWidth=1,
+            borderStyle='solid',   # <- evitar KeyError en versiones sin 'underline'
             forceBorder=True,
-            fieldFlags=4096,           # MULTILINE flag
+            fieldFlags=4096,       # MULTILINE flag
             value=""
         )
 
@@ -1026,8 +1026,6 @@ with col_p:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
-
-
 
 
 
