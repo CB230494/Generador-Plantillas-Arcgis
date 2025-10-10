@@ -143,7 +143,6 @@ def build_relevant_expr(rules_for_target):
             segs = [f"${{{src}}}='{v}'" for v in vals]
             or_parts.append(xlsform_or_expr(segs))
     return xlsform_or_expr(or_parts)
-
 # ==========================================================================================
 # Cabecera: Logo + “Nombre de la Delegación” → form_title compuesto
 # ==========================================================================================
@@ -192,7 +191,6 @@ if "reglas_finalizar" not in st.session_state:
 
 if "choices_extra_cols" not in st.session_state:
     st.session_state.choices_extra_cols = set()
-
 # ==========================================================================================
 # SEED: Precarga de preguntas EXACTAS (Fuerza Pública) + condicionales corregidas
 # ==========================================================================================
@@ -279,7 +277,6 @@ if "seed_cargado" not in st.session_state:
 
     st.session_state.preguntas = seed
     st.session_state.seed_cargado = True
-
 # ==========================================================================================
 # Sidebar: Metadatos + Acciones rápidas (cascadas, exportar/importar proyecto)
 # ==========================================================================================
@@ -383,7 +380,6 @@ with st.sidebar:
                 _rerun()
             except Exception as e:
                 st.error(f"No se pudo importar el JSON: {e}")
-
 # ==========================================================================================
 # Constructor: Agregar nuevas preguntas
 # ==========================================================================================
@@ -429,7 +425,6 @@ if add:
         }
         st.session_state.preguntas.append(nueva)
         st.success(f"Pregunta agregada: **{label}** (name: `{unico}`)")
-
 # ==========================================================================================
 # Panel de Condicionales (mostrar / finalizar)
 # ==========================================================================================
@@ -504,7 +499,6 @@ else:
                 if st.button(f"Eliminar regla fin #{i+1}", key=f"del_fin_{i}"):
                     del st.session_state.reglas_finalizar[i]
                     _rerun()
-
 # ==========================================================================================
 # Lista / Ordenado / Edición (completa)
 # ==========================================================================================
@@ -578,7 +572,6 @@ else:
                 del st.session_state.preguntas[idx]
                 st.warning("Pregunta eliminada.")
                 _rerun()
-
 # ==========================================================================================
 # Construcción XLSForm (páginas, condicionales y logo)
 # ==========================================================================================
@@ -597,7 +590,7 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     Construye DataFrames: survey, choices, settings.
     - Páginas con grupos begin_group/end_group y appearance=field-list
     - Introducción con NOTE + media::image
-    - relevant (manual + del panel) y finalizar temprano (NOT de previas)
+    - relevant (manual + del panel) y finalizar-temprano (NOT de previas)
     - choices con columnas extra (cascadas)
     """
     survey_rows = []
@@ -744,7 +737,6 @@ def descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo: 
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True
     )
-
 # ==========================================================================================
 # Exportar / Vista previa
 # ==========================================================================================
@@ -817,6 +809,204 @@ st.markdown("""
 🧭 **Páginas**: `style=pages` activa **Siguiente / Atrás**.  
 🧠 **Condicionales**: comparan contra el **name (slug)** de cada opción; por eso se despliegan correctamente las subopciones de **Agente II / Sub Oficial I / Sub Oficial II / Oficial I** y todas las de **Si/No**.  
 """)
+# ==========================================================================================
+# NUEVO: Descarga Word (.docx) y PDF editable (AcroForm) del formulario con condicionales
+# ==========================================================================================
+from typing import List, Dict, Tuple  # (solo para type hints locales)
+try:
+    from docx import Document
+    from docx.shared import Pt, Inches
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+except Exception:
+    Document = None  # si no está instalado, mostramos aviso al usar
+
+try:
+    from reportlab.pdfgen import canvas
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.lib.utils import ImageReader
+except Exception:
+    canvas = None
+
+def _build_cond_text(qname: str, reglas_vis: List[Dict]) -> str:
+    """Texto legible de condicionales que activan la pregunta qname."""
+    rels = [r for r in reglas_vis if r.get("target") == qname]
+    if not rels:
+        return ""
+    parts = []
+    for r in rels:
+        op = r.get("op", "=")
+        vals = r.get("values", [])
+        vtxt = ", ".join(vals) if vals else ""
+        parts.append(f"{r['src']} {op} [{vtxt}]")
+    return "Condición: se muestra si " + " OR ".join(parts)
+
+def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
+    if Document is None:
+        st.error("Falta dependencia: instala `python-docx` para generar Word.")
+        return
+    doc = Document()
+
+    # Título
+    p = doc.add_paragraph()
+    run = p.add_run(form_title)
+    run.bold = True
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.style.font.size = Pt(16)
+
+    # Logo (si existe)
+    if st.session_state.get("_logo_bytes"):
+        try:
+            img_buf = BytesIO(st.session_state["_logo_bytes"])
+            doc.add_picture(img_buf, width=Inches(1.5))
+        except Exception:
+            pass
+
+    # Introducción
+    doc.add_paragraph(intro)
+
+    # Preguntas + espacio para observaciones (párrafos libres, “infinitos”)
+    for i, q in enumerate(preguntas, start=1):
+        doc.add_paragraph("")  # separador
+        h = doc.add_paragraph(f"{i}. {q['label']}")
+        h.runs[0].bold = True
+
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        if cond_txt:
+            doc.add_paragraph(cond_txt, style=None)
+
+        # Opciones (si aplica)
+        if q["tipo_ui"] in ("Selección única", "Selección múltiple") and q.get("opciones"):
+            opts = ", ".join(q["opciones"])
+            doc.add_paragraph(f"Opciones: {opts}")
+
+        # Observaciones (área libre de escritura)
+        obs = doc.add_paragraph("Observaciones:")
+        obs.runs[0].italic = True
+        # Añadimos varias líneas en blanco (pero el usuario puede escribir ilimitado sobre ellas)
+        for _ in range(3):
+            doc.add_paragraph("")
+
+    buf = BytesIO()
+    doc.save(buf)
+    buf.seek(0)
+    st.download_button(
+        "📄 Descargar Word del formulario",
+        data=buf,
+        file_name=slugify_name(form_title) + "_formulario.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        use_container_width=True
+    )
+
+def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
+    if canvas is None:
+        st.error("Falta dependencia: instala `reportlab` para generar PDF.")
+        return
+    PAGE_W, PAGE_H = A4
+    margin = 2*cm
+    line_h = 14  # altura de texto
+    field_h = 60  # alto de campo de texto (multilinea)
+    y = PAGE_H - margin
+
+    buf = BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    c.setTitle(form_title)
+
+    # Título
+    c.setFont("Helvetica-Bold", 14)
+    c.drawCentredString(PAGE_W/2, y, form_title)
+    y -= 16
+
+    # Logo si existe
+    if st.session_state.get("_logo_bytes"):
+        try:
+            img = ImageReader(BytesIO(st.session_state["_logo_bytes"]))
+            c.drawImage(img, margin, y-40, width=60, height=40, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
+
+    # Introducción
+    c.setFont("Helvetica", 10)
+    intro_wrapped = []
+    max_chars = 95
+    for i in range(0, len(intro), max_chars):
+        intro_wrapped.append(intro[i:i+max_chars])
+    y -= 12
+    for line in intro_wrapped:
+        if y < margin + 120:
+            c.showPage(); y = PAGE_H - margin; c.setFont("Helvetica", 10)
+        c.drawString(margin, y, line)
+        y -= line_h
+
+    # Campos editables (uno por pregunta, multilinea e independientes)
+    c.setFont("Helvetica", 11)
+    for i, q in enumerate(preguntas, start=1):
+        label = f"{i}. {q['label']}"
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        # salto de página si no hay espacio
+        needed = line_h + (line_h if cond_txt else 0) + field_h + 10
+        if y - needed < margin:
+            c.showPage(); y = PAGE_H - margin; c.setFont("Helvetica", 11)
+
+        c.drawString(margin, y, label)
+        y -= line_h
+        if cond_txt:
+            c.setFont("Helvetica-Oblique", 9)
+            c.drawString(margin, y, cond_txt)
+            c.setFont("Helvetica", 11)
+            y -= line_h
+
+        # campo de texto (AcroForm)
+        # nombre de campo único
+        fname = f"campo_obs_{i}"
+        c.acroForm.textfield(
+            name=fname,
+            tooltip=f"Observaciones para: {q['name']}",
+            x=margin, y=y-field_h,
+            width=PAGE_W - 2*margin, height=field_h,
+            borderStyle='underlined', forceBorder=True,
+            multiline=True
+        )
+        # etiqueta de ayuda
+        c.setFont("Helvetica-Oblique", 9)
+        c.drawString(margin, y - field_h - 10, "Escriba sus observaciones aquí (multilínea, sin límite).")
+        c.setFont("Helvetica", 11)
+        y -= (field_h + 24)
+
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    st.download_button(
+        "🧾 Descargar PDF editable del formulario",
+        data=buf,
+        file_name=slugify_name(form_title) + "_formulario_editable.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
+
+# ---- UI de exportación (Word / PDF) ----
+st.markdown("### 📝 Exportar formulario en **Word** y **PDF editable**")
+col_w, col_p = st.columns(2)
+with col_w:
+    if st.button("Generar Word (DOCX)"):
+        export_docx_form(
+            preguntas=st.session_state.preguntas,
+            form_title=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
+                        if delegacion.strip() else "Encuesta Fuerza Pública"),
+            intro=INTRO_AMPLIADA,
+            reglas_vis=st.session_state.reglas_visibilidad
+        )
+with col_p:
+    if st.button("Generar PDF editable"):
+        export_pdf_editable_form(
+            preguntas=st.session_state.preguntas,
+            form_title=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
+                        if delegacion.strip() else "Encuesta Fuerza Pública"),
+            intro=INTRO_AMPLIADA,
+            reglas_vis=st.session_state.reglas_visibilidad
+        )
+
+
 
 
 
