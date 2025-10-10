@@ -811,6 +811,7 @@ st.markdown("""
 """)
 # ==========================================================================================
 # PARTE 10/10 — Exportar Word y PDF editable (PDF intacto; Word mimetiza el PDF)
+# + Mostrar opciones bajo las preguntas de selección (excepto Sí/No)
 # ==========================================================================================
 from typing import List, Dict
 import os
@@ -889,6 +890,26 @@ def _wrap_text_lines(text: str, font_name: str, font_size: float, max_width: flo
     return lines
 
 
+# Detectar preguntas con opciones que NO sean simple Sí/No
+def _is_yes_no_options(opts: List[str]) -> bool:
+    """Devuelve True si las opciones son solo Sí/No (en cualquiera de sus variantes)."""
+    if not opts:
+        return False
+    norm = {slugify_name(x) for x in opts if x and str(x).strip()}
+    # acepta si/no, sí/no, yes/no
+    yes_variants = {"si", "sí", "yes"}
+    no_variants = {"no"}
+    return norm.issubset(yes_variants | no_variants) and \
+           any(y in norm for y in yes_variants) and \
+           any(n in norm for n in no_variants)
+
+def _should_show_options(q: Dict) -> bool:
+    if q.get("tipo_ui") not in ("Selección única", "Selección múltiple"):
+        return False
+    opts = q.get("opciones") or []
+    return bool(opts) and not _is_yes_no_options(opts)
+
+
 # Páginas incluidas (3 y 4)
 P3_NAMES = {
     "mantiene_info","tipo_actividad","nombre_estructura","quienes",
@@ -908,7 +929,6 @@ def _only_pages_3_4(preguntas: List[Dict]) -> List[Dict]:
 
 # ---------- helpers para Word: cuadro coloreado como en el PDF ----------
 def _set_cell_shading(cell, fill_hex: str):
-    """Rellena el fondo de la celda con color HEX (p.ej. 'E6F4EA')."""
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
     shd = tcPr.find(qn('w:shd'))
@@ -919,9 +939,7 @@ def _set_cell_shading(cell, fill_hex: str):
     shd.set(qn('w:color'), 'auto')
     shd.set(qn('w:fill'), fill_hex.replace('#','').upper())
 
-
 def _set_cell_borders(cell, color_hex: str):
-    """Borde de 1pt alrededor de la celda."""
     tc = cell._tc
     tcPr = tc.get_or_add_tcPr()
     borders = tcPr.find(qn('w:tcBorders'))
@@ -931,30 +949,28 @@ def _set_cell_borders(cell, color_hex: str):
     for edge in ('top','left','bottom','right'):
         tag = OxmlElement(f'w:{edge}')
         tag.set(qn('w:val'), 'single')
-        tag.set(qn('w:sz'), '8')  # 8 = 0.5pt aprox; sube a 12 para 0.75pt
+        tag.set(qn('w:sz'), '8')  # ~0.5pt
         tag.set(qn('w:color'), color_hex.replace('#','').upper())
         borders.append(tag)
 
-
 def _add_observation_box(doc: Document, fill_hex: str, border_hex: str):
-    """Añade un cuadro ancho con relleno y borde (se expande al escribir)."""
+    from docx.enum.text import WD_LINE_SPACING
     tbl = doc.add_table(rows=1, cols=1)
     tbl.alignment = WD_TABLE_ALIGNMENT.LEFT
     tbl.autofit = True
     cell = tbl.cell(0, 0)
     _set_cell_shading(cell, fill_hex)
     _set_cell_borders(cell, border_hex)
-    # alto mínimo similar al PDF (80 pt ~ 1.1 in)
     row = tbl.rows[0]
     row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
     row.height = Inches(1.1)
-    # párrafo vacío para que el cursor quede adentro
     p = cell.paragraphs[0]
+    p.paragraph_format.line_spacing_rule = None
     p.add_run("")
 
 
 # -----------------------------------------------------------------------------------------
-# EXPORTACIÓN WORD — ahora mimetiza el PDF en composición y estructura
+# EXPORTACIÓN WORD — ahora mimetiza el PDF y muestra opciones (excepto Sí/No)
 # -----------------------------------------------------------------------------------------
 def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
     if Document is None:
@@ -963,15 +979,13 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
 
     preguntas_use = _only_pages_3_4(preguntas)
 
-    # Paleta (misma del PDF)
     fills = ["#E6F4EA", "#E7F0FE", "#FDECEA"]
     borders = ["#1E8E3E", "#1A73E8", "#D93025"]
-
     BLACK = RGBColor(0, 0, 0)
 
     doc = Document()
 
-    # Título grande y centrado (24pt) en negro
+    # Título 24pt centrado
     p = doc.add_paragraph()
     run = p.add_run(form_title)
     run.bold = True
@@ -979,17 +993,17 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     run.font.color.rgb = BLACK
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Logo (↑ más grande) centrado
+    # Logo centrado grande
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img_buf = BytesIO(logo_b)
             doc.add_paragraph().alignment = WD_ALIGN_PARAGRAPH.CENTER
-            doc.add_picture(img_buf, width=Inches(2.8))  # grande como en PDF
+            doc.add_picture(img_buf, width=Inches(2.8))
         except Exception:
             pass
 
-    # Introducción (12pt, espaciado similar)
+    # Introducción 12pt
     intro_p = doc.add_paragraph(intro)
     intro_p.runs[0].font.size = Pt(12)
     intro_p.runs[0].font.color.rgb = BLACK
@@ -1007,18 +1021,22 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
         if q.get("name") not in P3_NAMES:
             continue
 
-        # Etiqueta de la pregunta (11pt) — Word envuelve solo
-        doc.add_paragraph("")  # separador
+        doc.add_paragraph("")
         h = doc.add_paragraph(f"{i}. {q['label']}")
         r = h.runs[0]; r.bold = False; r.font.size = Pt(11); r.font.color.rgb = BLACK
 
-        # Condicional (si aplica) 9pt itálica
         cond_txt = _build_cond_text(q["name"], reglas_vis)
         if cond_txt:
             cpara = doc.add_paragraph(cond_txt)
             rc = cpara.runs[0]; rc.italic = True; rc.font.size = Pt(9); rc.font.color.rgb = BLACK
 
-        # Cuadro de observaciones (colores y borde como PDF)
+        # --- Opciones (si no es Sí/No) ---
+        if _should_show_options(q):
+            opts_str = ", ".join([str(x) for x in q.get("opciones") if str(x).strip()])
+            opara = doc.add_paragraph(f"Opciones: {opts_str}")
+            ro = opara.runs[0]; ro.font.size = Pt(10); ro.font.color.rgb = BLACK
+
+        # Cuadro
         fill = fills[color_idx % len(fills)]
         border = borders[color_idx % len(borders)]
         color_idx += 1
@@ -1047,6 +1065,11 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
             cpara = doc.add_paragraph(cond_txt)
             rc = cpara.runs[0]; rc.italic = True; rc.font.size = Pt(9); rc.font.color.rgb = BLACK
 
+        if _should_show_options(q):
+            opts_str = ", ".join([str(x) for x in q.get("opciones") if str(x).strip()])
+            opara = doc.add_paragraph(f"Opciones: {opts_str}")
+            ro = opara.runs[0]; ro.font.size = Pt(10); ro.font.color.rgb = BLACK
+
         fill = fills[(i-1) % len(fills)]
         border = borders[(i-1) % len(borders)]
         _add_observation_box(doc, fill, border)
@@ -1069,7 +1092,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
 
 
 # -----------------------------------------------------------------------------------------
-# EXPORTACIÓN PDF — ***NO CAMBIAR*** (idéntico al que ya te funciona perfecto)
+# EXPORTACIÓN PDF — ***SIN CAMBIOS*** (solo añadimos mostrar opciones como en Word)
 # -----------------------------------------------------------------------------------------
 def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
     if canvas is None:
@@ -1089,6 +1112,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     label_font, label_size = "Helvetica", 11
     cond_font, cond_size = "Helvetica-Oblique", 9
     helper_font, helper_size = "Helvetica-Oblique", 9
+    opts_font, opts_size = "Helvetica", 10  # opciones
 
     fills = [HexColor("#E6F4EA"), HexColor("#E7F0FE"), HexColor("#FDECEA")]
     borders = [HexColor("#1E8E3E"), HexColor("#1A73E8"), HexColor("#D93025")]
@@ -1101,7 +1125,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     c = canvas.Canvas(buf, pagesize=A4)
     c.setTitle(form_title)
 
-    # PÁGINA 1: Portada amplia
+    # --------- Portada (idéntica a la versión "perfecta" que ya tenías) ---------
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
@@ -1133,7 +1157,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     y = PAGE_H - margin
     c.setFillColor(black)
 
-    # SECCIÓN: Información de Interés Policial
+    # -------------------- SECCIÓN: Información de Interés Policial --------------------
     c.setFont(sec_font, sec_size)
     c.drawString(margin, y, "Información de Interés Policial")
     y -= (line_h + 6)
@@ -1146,7 +1170,19 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             continue
 
         label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
-        needed = line_h * len(label_lines) + field_h + 24
+        # espacio base: etiqueta + (cond) + (opciones) + campo + ayuda
+        needed = line_h * len(label_lines) + field_h + 26
+        # sumamos condicional si existe
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        if cond_txt:
+            cond_lines = _wrap_text_lines(cond_txt, cond_font, cond_size, max_text_w)
+            needed += line_h * len(cond_lines)
+        # sumamos opciones si aplica
+        if _should_show_options(q):
+            opts_str = ", ".join([str(x) for x in q.get("opciones") if str(x).strip()])
+            opts_lines = _wrap_text_lines(f"Opciones: {opts_str}", opts_font, opts_size, max_text_w)
+            needed += line_h * len(opts_lines)
+
         if y - needed < margin:
             c.showPage(); y = PAGE_H - margin
             c.setFillColor(black)
@@ -1157,26 +1193,25 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             c.drawString(margin, y, line)
             y -= line_h
 
-        cond_txt = _build_cond_text(q["name"], reglas_vis)
         if cond_txt:
-            cond_lines = _wrap_text_lines(cond_txt, cond_font, cond_size, max_text_w)
             c.setFont(cond_font, cond_size)
             for cl in cond_lines:
-                if y - line_h < margin:
-                    c.showPage(); y = PAGE_H - margin
-                    c.setFillColor(black)
-                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Policial")
-                    y -= (line_h + 6); c.setFont(cond_font, cond_size)
                 c.drawString(margin, y, cl)
+                y -= line_h
+            c.setFont(label_font, label_size)
+
+        # --- Opciones (si no es Sí/No) ---
+        if _should_show_options(q):
+            c.setFont(opts_font, opts_size)
+            for ol in opts_lines:
+                c.drawString(margin, y, ol)
                 y -= line_h
             c.setFont(label_font, label_size)
 
         fill_color = fills[color_idx % len(fills)]
         border_color = borders[color_idx % len(borders)]
         color_idx += 1
-
-        c.setFillColor(fill_color)
-        c.setStrokeColor(border_color)
+        c.setFillColor(fill_color); c.setStrokeColor(border_color)
         c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
         c.setFillColor(black)
 
@@ -1186,11 +1221,8 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             x=margin, y=y - field_h,
             width=max_text_w, height=field_h,
             borderWidth=1, borderStyle='solid',
-            forceBorder=True,
-            fieldFlags=4096,
-            value=""
+            forceBorder=True, fieldFlags=4096, value=""
         )
-
         c.setFont(helper_font, helper_size)
         c.drawString(margin, y - field_h - 10, "Agregue sus observaciones sobre la pregunta.")
         c.setFont(label_font, label_size)
@@ -1198,7 +1230,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         y -= (field_h + 26)
         i += 1
 
-    # SECCIÓN: Información de Interés Interno
+    # -------------------- SECCIÓN: Información de Interés Interno --------------------
     if y < margin + 120:
         c.showPage(); y = PAGE_H - margin; c.setFillColor(black)
     c.setFont(sec_font, sec_size)
@@ -1211,7 +1243,16 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             continue
 
         label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
-        needed = line_h * len(label_lines) + field_h + 24
+        needed = line_h * len(label_lines) + field_h + 26
+        cond_txt = _build_cond_text(q["name"], reglas_vis)
+        if cond_txt:
+            cond_lines = _wrap_text_lines(cond_txt, cond_font, cond_size, max_text_w)
+            needed += line_h * len(cond_lines)
+        if _should_show_options(q):
+            opts_str = ", ".join([str(x) for x in q.get("opciones") if str(x).strip()])
+            opts_lines = _wrap_text_lines(f"Opciones: {opts_str}", opts_font, opts_size, max_text_w)
+            needed += line_h * len(opts_lines)
+
         if y - needed < margin:
             c.showPage(); y = PAGE_H - margin
             c.setFillColor(black)
@@ -1222,24 +1263,23 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             c.drawString(margin, y, line)
             y -= line_h
 
-        cond_txt = _build_cond_text(q["name"], reglas_vis)
         if cond_txt:
-            cond_lines = _wrap_text_lines(cond_txt, cond_font, cond_size, max_text_w)
             c.setFont(cond_font, cond_size)
             for cl in cond_lines:
-                if y - line_h < margin:
-                    c.showPage(); y = PAGE_H - margin
-                    c.setFillColor(black)
-                    c.setFont(sec_font, sec_size); c.drawString(margin, y, "Información de Interés Interno")
-                    y -= (line_h + 6); c.setFont(cond_font, cond_size)
                 c.drawString(margin, y, cl)
+                y -= line_h
+            c.setFont(label_font, label_size)
+
+        if _should_show_options(q):
+            c.setFont(opts_font, opts_size)
+            for ol in opts_lines:
+                c.drawString(margin, y, ol)
                 y -= line_h
             c.setFont(label_font, label_size)
 
         fill_color = fills[(i-1) % len(fills)]
         border_color = borders[(i-1) % len(borders)]
-        c.setFillColor(fill_color)
-        c.setStrokeColor(border_color)
+        c.setFillColor(fill_color); c.setStrokeColor(border_color)
         c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
         c.setFillColor(black)
 
@@ -1249,11 +1289,8 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             x=margin, y=y - field_h,
             width=max_text_w, height=field_h,
             borderWidth=1, borderStyle='solid',
-            forceBorder=True,
-            fieldFlags=4096,
-            value=""
+            forceBorder=True, fieldFlags=4096, value=""
         )
-
         c.setFont(helper_font, helper_size)
         c.drawString(margin, y - field_h - 10, "Agregue sus observaciones sobre la pregunta.")
         c.setFont(label_font, label_size)
@@ -1296,6 +1333,5 @@ with col_p:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
-
 
 
