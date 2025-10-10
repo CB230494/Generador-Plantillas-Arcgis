@@ -812,7 +812,7 @@ st.markdown("""
 # ==========================================================================================
 # NUEVO: Descarga Word (.docx) y PDF editable (AcroForm) del formulario con condicionales
 # ==========================================================================================
-from typing import List, Dict, Tuple  # (solo para type hints locales)
+from typing import List, Dict, Tuple  # solo para type hints locales
 try:
     from docx import Document
     from docx.shared import Pt, Inches
@@ -828,6 +828,7 @@ try:
 except Exception:
     canvas = None
 
+
 def _build_cond_text(qname: str, reglas_vis: List[Dict]) -> str:
     """Texto legible de condicionales que activan la pregunta qname."""
     rels = [r for r in reglas_vis if r.get("target") == qname]
@@ -841,6 +842,8 @@ def _build_cond_text(qname: str, reglas_vis: List[Dict]) -> str:
         parts.append(f"{r['src']} {op} [{vtxt}]")
     return "Condición: se muestra si " + " OR ".join(parts)
 
+
+# ---------------------- EXPORTACIÓN WORD ----------------------
 def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
     if Document is None:
         st.error("Falta dependencia: instala `python-docx` para generar Word.")
@@ -852,7 +855,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     run = p.add_run(form_title)
     run.bold = True
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    p.style.font.size = Pt(16)
+    run.font.size = Pt(16)
 
     # Logo (si existe)
     if st.session_state.get("_logo_bytes"):
@@ -873,7 +876,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
 
         cond_txt = _build_cond_text(q["name"], reglas_vis)
         if cond_txt:
-            doc.add_paragraph(cond_txt, style=None)
+            doc.add_paragraph(cond_txt)
 
         # Opciones (si aplica)
         if q["tipo_ui"] in ("Selección única", "Selección múltiple") and q.get("opciones"):
@@ -883,7 +886,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
         # Observaciones (área libre de escritura)
         obs = doc.add_paragraph("Observaciones:")
         obs.runs[0].italic = True
-        # Añadimos varias líneas en blanco (pero el usuario puede escribir ilimitado sobre ellas)
+        # Añadimos varias líneas en blanco (el usuario puede escribir sobre ellas)
         for _ in range(3):
             doc.add_paragraph("")
 
@@ -898,14 +901,17 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
         use_container_width=True
     )
 
+
+# ---------------------- EXPORTACIÓN PDF EDITABLE ----------------------
 def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str, reglas_vis: List[Dict]):
     if canvas is None:
         st.error("Falta dependencia: instala `reportlab` para generar PDF.")
         return
+
     PAGE_W, PAGE_H = A4
-    margin = 2*cm
-    line_h = 14  # altura de texto
-    field_h = 60  # alto de campo de texto (multilinea)
+    margin = 2 * cm
+    line_h = 14      # altura de texto
+    field_h = 60     # alto de cada campo de texto (multilínea)
     y = PAGE_H - margin
 
     buf = BytesIO()
@@ -914,62 +920,74 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
 
     # Título
     c.setFont("Helvetica-Bold", 14)
-    c.drawCentredString(PAGE_W/2, y, form_title)
+    c.drawCentredString(PAGE_W / 2, y, form_title)
     y -= 16
 
     # Logo si existe
     if st.session_state.get("_logo_bytes"):
         try:
             img = ImageReader(BytesIO(st.session_state["_logo_bytes"]))
-            c.drawImage(img, margin, y-40, width=60, height=40, preserveAspectRatio=True, mask='auto')
+            c.drawImage(img, margin, y - 40, width=60, height=40, preserveAspectRatio=True, mask='auto')
         except Exception:
             pass
 
-    # Introducción
+    # Introducción (envuelta manualmente)
     c.setFont("Helvetica", 10)
     intro_wrapped = []
     max_chars = 95
     for i in range(0, len(intro), max_chars):
-        intro_wrapped.append(intro[i:i+max_chars])
+        intro_wrapped.append(intro[i:i + max_chars])
     y -= 12
     for line in intro_wrapped:
         if y < margin + 120:
-            c.showPage(); y = PAGE_H - margin; c.setFont("Helvetica", 10)
+            c.showPage()
+            y = PAGE_H - margin
+            c.setFont("Helvetica", 10)
         c.drawString(margin, y, line)
         y -= line_h
 
-    # Campos editables (uno por pregunta, multilinea e independientes)
+    # Campos editables (uno por pregunta; multilínea con fieldFlags=4096)
     c.setFont("Helvetica", 11)
     for i, q in enumerate(preguntas, start=1):
         label = f"{i}. {q['label']}"
         cond_txt = _build_cond_text(q["name"], reglas_vis)
-        # salto de página si no hay espacio
+
+        # espacio necesario; salto de página si no alcanza
         needed = line_h + (line_h if cond_txt else 0) + field_h + 10
         if y - needed < margin:
-            c.showPage(); y = PAGE_H - margin; c.setFont("Helvetica", 11)
+            c.showPage()
+            y = PAGE_H - margin
+            c.setFont("Helvetica", 11)
 
+        # etiqueta
         c.drawString(margin, y, label)
         y -= line_h
+
+        # condición visible (si aplica)
         if cond_txt:
             c.setFont("Helvetica-Oblique", 9)
             c.drawString(margin, y, cond_txt)
             c.setFont("Helvetica", 11)
             y -= line_h
 
-        # campo de texto (AcroForm)
-        # nombre de campo único
+        # campo de texto: multilínea con flag 4096; borde subrayado
         fname = f"campo_obs_{i}"
         c.acroForm.textfield(
             name=fname,
             tooltip=f"Observaciones para: {q['name']}",
-            x=margin, y=y-field_h,
-            width=PAGE_W - 2*margin, height=field_h,
-            borderStyle='underlined', forceBorder=True,
-            multiline=True
+            x=margin,
+            y=y - field_h,
+            width=PAGE_W - 2 * margin,
+            height=field_h,
+            borderStyle='underline',   # estilo válido
+            forceBorder=True,
+            fieldFlags=4096,           # MULTILINE flag
+            value=""
         )
-        # etiqueta de ayuda
+
+        # ayuda
         c.setFont("Helvetica-Oblique", 9)
-        c.drawString(margin, y - field_h - 10, "Escriba sus observaciones aquí (multilínea, sin límite).")
+        c.drawString(margin, y - field_h - 10, "Escriba sus observaciones aquí (multilínea, sin límite visible).")
         c.setFont("Helvetica", 11)
         y -= (field_h + 24)
 
@@ -984,9 +1002,11 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         use_container_width=True
     )
 
-# ---- UI de exportación (Word / PDF) ----
+
+# ---------------------- BOTONES STREAMLIT ----------------------
 st.markdown("### 📝 Exportar formulario en **Word** y **PDF editable**")
 col_w, col_p = st.columns(2)
+
 with col_w:
     if st.button("Generar Word (DOCX)"):
         export_docx_form(
@@ -996,6 +1016,7 @@ with col_w:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
+
 with col_p:
     if st.button("Generar PDF editable"):
         export_pdf_editable_form(
@@ -1005,6 +1026,7 @@ with col_p:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
+
 
 
 
