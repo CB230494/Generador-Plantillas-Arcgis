@@ -1,7 +1,16 @@
+# ===========================
+# Requisitos Constructor de Encuestas → XLSForm + Word + PDF
+# ===========================
 streamlit>=1.36
 pandas>=2.2
 openpyxl>=3.1.2
 xlsxwriter>=3.2.0
+
+# --- NUEVOS para exportar Word y PDF ---
+python-docx>=0.8.11
+reportlab>=4.0.9
+
+
 
 
 
