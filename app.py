@@ -811,7 +811,7 @@ st.markdown("""
 """)
 # ==========================================================================================
 # NUEVO: Descarga Word (.docx) y PDF editable (AcroForm) del formulario con condicionales
-# (Página 1 + Páginas 3 y 4; texto siempre negro; portada amplia; sin “(Página X)”)
+# (Página 1 + Páginas 3 y 4; textos en negro; portada amplia; sin “(Página X)”)
 # ==========================================================================================
 from typing import List, Dict
 import os
@@ -920,16 +920,16 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
     run.font.size = Pt(22)
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-    # Logo (subido o fallback 001.png) MÁS GRANDE
+    # Logo (subido o fallback 001.png) más grande
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img_buf = BytesIO(logo_b)
-            doc.add_picture(img_buf, width=Inches(2.6))  # antes 2.2
+            doc.add_picture(img_buf, width=Inches(2.6))
         except Exception:
             pass
 
-    # Introducción (un poco más grande y con espaciado)
+    # Introducción
     intro_p = doc.add_paragraph(intro)
     intro_p.runs[0].font.size = Pt(12)
     pf = intro_p.paragraph_format
@@ -960,8 +960,8 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
             opara = doc.add_paragraph(f"Opciones: {opts}")
             opara.runs[0].font.size = Pt(11)
 
-        obs = doc.add_paragraph("Observaciones:")
-        obs.runs[0].italic = True
+        # Nota corta (sin hablar de límites)
+        doc.add_paragraph("Agregue sus observaciones sobre la pregunta.")
         for _ in range(3):
             doc.add_paragraph("")
         i += 1
@@ -989,8 +989,7 @@ def export_docx_form(preguntas: List[Dict], form_title: str, intro: str, reglas_
             opara = doc.add_paragraph(f"Opciones: {opts}")
             opara.runs[0].font.size = Pt(11)
 
-        obs = doc.add_paragraph("Observaciones:")
-        obs.runs[0].italic = True
+        doc.add_paragraph("Agregue sus observaciones sobre la pregunta.")
         for _ in range(3):
             doc.add_paragraph("")
         i += 1
@@ -1026,12 +1025,13 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     sec_font, sec_size = "Helvetica-Bold", 14
     label_font, label_size = "Helvetica", 11
     cond_font, cond_size = "Helvetica-Oblique", 9
+    helper_font, helper_size = "Helvetica-Oblique", 9
 
     # Campos (fondo suave; texto siempre negro)
     fills = [HexColor("#E6F4EA"), HexColor("#E7F0FE"), HexColor("#FDECEA")]
     borders = [HexColor("#1E8E3E"), HexColor("#1A73E8"), HexColor("#D93025")]
 
-    field_h = 60
+    field_h = 80   # un poco más alto; igual SIN límite de texto (scroll interno)
     line_h = 14
     y = PAGE_H - margin
 
@@ -1040,36 +1040,32 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
     c.setTitle(form_title)
 
     # -------------------- PÁGINA 1: PORTADA AMPLIA --------------------
-    # Logo centrado (AÚN MÁS GRANDE)
     logo_b = _get_logo_bytes_fallback()
     if logo_b:
         try:
             img = ImageReader(BytesIO(logo_b))
-            logo_w, logo_h = 160, 115   # (↑) más grande
+            logo_w, logo_h = 160, 115
             c.drawImage(img, (PAGE_W - logo_w) / 2, y - logo_h, width=logo_w, height=logo_h,
                         preserveAspectRatio=True, mask='auto')
             y -= (logo_h + 24)
         except Exception:
             pass
 
-    # Título grande, **ENVUELTO** para nunca salirse de márgenes
+    # Título grande ENVUELTO para no salirse de márgenes
     c.setFillColor(black)
-    title_lines = _wrap_text_lines(form_title, title_font, title_size, max_text_w)
-    if not title_lines:
-        title_lines = [form_title]
+    title_lines = _wrap_text_lines(form_title, title_font, title_size, max_text_w) or [form_title]
     c.setFont(title_font, title_size)
     for tl in title_lines:
         c.drawCentredString(PAGE_W / 2, y, tl)
-        y -= 26  # spacing entre líneas del título
+        y -= 26
 
-    # Introducción más grande y con mayor interlineado
+    # Introducción
     c.setFont(intro_font, intro_size)
     intro_lines = _wrap_text_lines(intro, intro_font, intro_size, max_text_w)
     for line in intro_lines:
         if y < margin + 80:
             c.showPage(); y = PAGE_H - margin
-            c.setFillColor(black)
-            c.setFont(intro_font, intro_size)
+            c.setFillColor(black); c.setFont(intro_font, intro_size)
         c.drawString(margin, y, line)
         y -= intro_line_h
 
@@ -1092,7 +1088,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
 
         # Etiqueta envuelta
         label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
-        needed = line_h * len(label_lines) + field_h + 14
+        needed = line_h * len(label_lines) + field_h + 24  # + texto de ayuda
         if y - needed < margin:
             c.showPage(); y = PAGE_H - margin
             c.setFillColor(black)
@@ -1118,7 +1114,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
                 y -= line_h
             c.setFont(label_font, label_size)
 
-        # Rectángulo del campo y campo editable
+        # Rectángulo del campo y campo editable (SIN límite de caracteres)
         fill_color = fills[color_idx % len(fills)]
         border_color = borders[color_idx % len(borders)]
         color_idx += 1
@@ -1128,6 +1124,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
         c.setFillColor(black)
 
+        # NOTA: NO establecemos 'maxlen' -> sin límite; con flag multiline (4096) -> permite scroll
         fname = f"campo_obs_{i}"
         c.acroForm.textfield(
             name=fname,
@@ -1135,13 +1132,21 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             x=margin, y=y - field_h,
             width=max_text_w, height=field_h,
             borderWidth=1, borderStyle='solid',
-            forceBorder=True, fieldFlags=4096, value=""
+            forceBorder=True,
+            fieldFlags=4096,   # MULTILINE (solo este flag; no DoNotScroll)
+            value=""
         )
-        y -= (field_h + 24)
+
+        # Texto de ayuda (sin hablar de límites)
+        c.setFont(helper_font, helper_size)
+        c.drawString(margin, y - field_h - 10, "Agregue sus observaciones sobre la pregunta.")
+        c.setFont(label_font, label_size)
+
+        y -= (field_h + 26)
         i += 1
 
     # -------------------- SECCIÓN: Información de Interés Interno --------------------
-    if y < margin + 80:
+    if y < margin + 120:
         c.showPage(); y = PAGE_H - margin; c.setFillColor(black)
     c.setFont(sec_font, sec_size)
     c.drawString(margin, y, "Información de Interés Interno")
@@ -1153,7 +1158,7 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
             continue
 
         label_lines = _wrap_text_lines(f"{i}. {q['label']}", label_font, label_size, max_text_w)
-        needed = line_h * len(label_lines) + field_h + 14
+        needed = line_h * len(label_lines) + field_h + 24
         if y - needed < margin:
             c.showPage(); y = PAGE_H - margin
             c.setFillColor(black)
@@ -1185,16 +1190,22 @@ def export_pdf_editable_form(preguntas: List[Dict], form_title: str, intro: str,
         c.rect(margin, y - field_h, max_text_w, field_h, fill=1, stroke=1)
         c.setFillColor(black)
 
-        fname = f"campo_obs_{i}"
         c.acroForm.textfield(
-            name=fname,
+            name=f"campo_obs_{i}",
             tooltip=f"Observaciones para: {q['name']}",
             x=margin, y=y - field_h,
             width=max_text_w, height=field_h,
             borderWidth=1, borderStyle='solid',
-            forceBorder=True, fieldFlags=4096, value=""
+            forceBorder=True,
+            fieldFlags=4096,
+            value=""
         )
-        y -= (field_h + 24)
+
+        c.setFont(helper_font, helper_size)
+        c.drawString(margin, y - field_h - 10, "Agregue sus observaciones sobre la pregunta.")
+        c.setFont(label_font, label_size)
+
+        y -= (field_h + 26)
         i += 1
 
     c.showPage()
@@ -1232,7 +1243,6 @@ with col_p:
             intro=INTRO_AMPLIADA,
             reglas_vis=st.session_state.reglas_visibilidad
         )
-
 
 
 
