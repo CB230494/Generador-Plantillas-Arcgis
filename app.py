@@ -1,25 +1,22 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
 # App: Constructor de Encuestas → XLSForm para ArcGIS Survey123 (versión extendida)
-# ✅ FIX DEFINICIONES (FUNCIONA EN WEB/FIELD): "Ver definición" (select_one minimal) + NOTE (type=note)
-# ✅ FIX CRÍTICO: Los nombres show_def_* y def_* se agregan a pagina3/pagina4 para que SÍ se exporten
+# ✅ AYUDA QUE SÍ FUNCIONA EN WEB/FIELD: hint + guidance_hint (tipo "tooltip" contextual)
 #
-# - Mantiene funcionalidades: agregar/editar/ordenar/borrar
+# - Constructor (agregar/editar/ordenar/borrar)
 # - Condicionales (relevant) + Finalizar temprano
 # - Listas en cascada (choice_filter)
 # - Exportar/Importar proyecto (JSON)
 # - Exportar a XLSForm (survey/choices/settings)
-# - PÁGINAS reales con settings.style = "pages"
+# - PÁGINAS reales (Next/Back) con settings.style = "pages"
 # - Introducción con logo (media::image) y texto (NOTE)
-# - Preguntas precargadas EXACTAS para encuesta Fuerza Pública
+# - Preguntas precargadas EXACTAS para la encuesta de Fuerza Pública
 # ==========================================================================================
 
 import re
 import json
 from io import BytesIO
 from datetime import datetime
-from typing import List, Dict
-import os
 
 import streamlit as st
 import pandas as pd
@@ -34,13 +31,13 @@ st.markdown("""
 Crea tu cuestionario y **exporta un XLSForm** listo para **ArcGIS Survey123 (Connect/Web Designer)**.
 
 Incluye:
-- Tipos: **text**, **integer**, **date**, **time**, **geopoint**, **select_one**, **select_multiple**, **note**.
+- Tipos: **text**, **integer/decimal**, **date**, **time**, **geopoint**, **select_one**, **select_multiple**.
 - **Constructor completo** (agregar, editar, ordenar, borrar).
 - **Condicionales (relevant)** y **finalizar temprano**.
 - **Listas en cascada** con **choice_filter** (ejemplo Cantón→Distrito).
 - **Páginas** con navegación **Siguiente/Anterior** (`settings.style = pages`).
 - **Introducción** con **logo** usando `media::image`.
-- ✅ Definiciones ocultas: **Ver definición → aparece NOTA** (funciona en Survey123 Web / Field).
+- ✅ Ayuda contextual que SÍ funciona: **hint** y **guidance_hint**.
 """)
 
 # ==========================================================================================
@@ -54,8 +51,7 @@ TIPOS = [
     "Selección múltiple",
     "Fecha",
     "Hora",
-    "GPS (ubicación)",
-    "Nota (solo lectura)"  # ✅ NUEVO
+    "GPS (ubicación)"
 ]
 
 def _rerun():
@@ -86,7 +82,6 @@ def asegurar_nombre_unico(base: str, usados: set) -> str:
     return f"{base}_{i}"
 
 def map_tipo_to_xlsform(tipo_ui: str, name: str):
-    """UI → XLSForm type + default appearance + list_name (si aplica)"""
     if tipo_ui == "Texto (corto)":
         return ("text", None, None)
     if tipo_ui == "Párrafo (texto largo)":
@@ -103,8 +98,6 @@ def map_tipo_to_xlsform(tipo_ui: str, name: str):
         return ("time", None, None)
     if tipo_ui == "GPS (ubicación)":
         return ("geopoint", None, None)
-    if tipo_ui == "Nota (solo lectura)":
-        return ("note", None, None)  # ✅ XLSForm note real
     return ("text", None, None)
 
 def xlsform_or_expr(conds):
@@ -120,10 +113,6 @@ def xlsform_not(expr):
     return f"not({expr})"
 
 def build_relevant_expr(rules_for_target):
-    """
-    rules_for_target: lista de dicts [{"src","op","values"}]
-    Devuelve expr 'relevant' con OR cuando hay varios valores.
-    """
     or_parts = []
     for r in rules_for_target:
         src = r["src"]
@@ -146,7 +135,7 @@ def build_relevant_expr(rules_for_target):
     return xlsform_or_expr(or_parts)
 
 # ==========================================================================================
-# Cabecera: Logo + Delegación
+# Cabecera: Logo + “Nombre de la Delegación”
 # ==========================================================================================
 DEFAULT_LOGO_PATH = "001.png"
 
@@ -184,18 +173,15 @@ with col_txt:
 # ==========================================================================================
 if "preguntas" not in st.session_state:
     st.session_state.preguntas = []
-
 if "reglas_visibilidad" not in st.session_state:
     st.session_state.reglas_visibilidad = []
-
 if "reglas_finalizar" not in st.session_state:
     st.session_state.reglas_finalizar = []
-
 if "choices_extra_cols" not in st.session_state:
     st.session_state.choices_extra_cols = set()
 
 # ==========================================================================================
-# SEED: Precarga EXACTA + definiciones (funcionan porque también se incluyen en pagina3/pagina4)
+# SEED: Precarga EXACTA + guidance_hint (lo que sí funciona)
 # ==========================================================================================
 if "seed_cargado" not in st.session_state:
     v_si = slugify_name("Si")
@@ -205,105 +191,96 @@ if "seed_cargado" not in st.session_state:
     v_sub_of_ii = slugify_name("Sub Oficial II")
     v_oficial_i = slugify_name("Oficial I")
 
-    opt_ver = "Ver definición"
-    opt_ocu = "Ocultar"
-    v_ver = slugify_name(opt_ver)
-
     seed = [
         # ================== Página 2: Datos ==================
-        {"tipo_ui":"Número","label":"Años de servicio ","name":"anos_servicio","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Número","label":"Edad","name":"edad","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Selección única","label":"Genero","name":"genero","required":True,"opciones":["Masculino","Femenino","LGBTQ+"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Número","label":"Años de servicio ","name":"anos_servicio","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
+        {"tipo_ui":"Número","label":"Edad","name":"edad","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
+        {"tipo_ui":"Selección única","label":"Genero","name":"genero","required":True,"opciones":["Masculino","Femenino","LGBTQ+"],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
         {"tipo_ui":"Selección única","label":"Escolaridad","name":"escolaridad","required":True,
          "opciones":["Ninguna","Primaria","Primaria Incompleta","Secundaria","Secundaria Incompleta","Universidad Completa","Universidad Incompleta","Técnico"],
-         "appearance":None,"choice_filter":None,"relevant":None},
+         "appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
         {"tipo_ui":"Selección única","label":"¿Qué clase del manual de puestos desempeña en su delegación?","name":"manual_puesto","required":True,
-         "opciones":["Agente I","Agente II","Sub Oficial I","Sub Oficial II","Oficial I","Jefe de Delegación","Sub Jefe de Delegación"],"appearance":None,"choice_filter":None,"relevant":None},
+         "opciones":["Agente I","Agente II","Sub Oficial I","Sub Oficial II","Oficial I","Jefe de Delegación","Sub Jefe de Delegación"],
+         "appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
 
-        # Subopciones: se muestran según manual_puesto
+        # Subopciones
         {"tipo_ui":"Selección única","label":"Agente II","name":"agente_ii","required":False,
          "opciones":["Agente de Fronteras","Agente de Seguridad Turistica","Agente de Programas Preventivos","Agente de comunicaciones","Agente Armero","Agente Conductor de Vehículos Oficiales","Agente de Operaciones"],
-         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_agente_ii}'"},
+         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_agente_ii}'", "hint":None, "guidance_hint":None},
 
         {"tipo_ui":"Selección única","label":"Sub Oficial I","name":"sub_oficial_i","required":False,
          "opciones":["Encargado Equipo Operativo Policial","Encargado Equipo de Seguridad Turística","Encargado Equipo de Fronteras","Encargado Programas Preventivos","Encargado Agentes Armeros","Encargado de Equipo de Comunicaciones"],
-         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_sub_of_i}'"},
+         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_sub_of_i}'", "hint":None, "guidance_hint":None},
 
         {"tipo_ui":"Selección única","label":"Sub Oficial II","name":"sub_oficial_ii","required":False,
          "opciones":["Encargado Subgrupo Operativo Policial","Encargado Subgrupo de Seguridad Turística","Encargado Subgrupo de Fronteras","Oficial de Guardia","Encargado de Operaciones"],
-         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_sub_of_ii}'"},
+         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_sub_of_ii}'", "hint":None, "guidance_hint":None},
 
         {"tipo_ui":"Selección única","label":"Oficial I","name":"oficial_i","required":False,
          "opciones":["Jefe Delegación Distrital","Encargado Grupo Operativo Policial"],
-         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_oficial_i}'"},
+         "appearance":None,"choice_filter":None,"relevant":f"${{manual_puesto}}='{v_oficial_i}'", "hint":None, "guidance_hint":None},
 
         # ================== Página 3: Información de Interés Policial ==================
-        {"tipo_ui":"Selección única","label":"¿Mantiene usted información relacionada a personas, grupos de personas, objetivos reincidentes, objetivos de interés policial o estructuras criminales que se dediquen a realizar actos ilícitos en su jurisdicción?","name":"mantiene_info","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Selección única","label":"¿Mantiene usted información relacionada a personas, grupos de personas, objetivos reincidentes, objetivos de interés policial o estructuras criminales que se dediquen a realizar actos ilícitos en su jurisdicción?","name":"mantiene_info","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
 
         {"tipo_ui":"Selección múltiple","label":"¿Qué tipo de actividad delictual es la que se realiza por parte de estas personas?","name":"tipo_actividad","required":True,
          "opciones":["Bunker(espacio cerrado para la venta y distribucion de drogas)","Delitos contra la vida (Homicidios, heridos)","Venta y consumo de drogas en vía pública","Delitos sexuales","Asalto (a personas, comercio, vivienda, transporte público)","Daños a la propiedad. (Destruir, inutilizar o desaparecer)","Estafas (Billetes, documentos, oro, lotería falsos)","Estafa Informática (computadora, tarjetas, teléfonos, etc.)","Extorsión (intimidar o amenazar a otras personas con fines de lucro)","Hurto","Receptación (persona que adquiere, recibe u oculta artículos provenientes de un delito en el que no participó)","Robo a edificaciones","Robo a vivienda","Robo de ganado y agrícola","Robo a comercio","Robo de vehículos","Tacha de vehículos","Contrabando (licor, cigarrillos, medicinas, ropa, calzado, etc.)","Tráfico ilegal de personas (coyotaje)","Otro"],
-         "appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'"},
+         "appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Texto (corto)","label":"¿Cuál es el nombre de la estructura criminal?","name":"nombre_estructura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'"},
-        {"tipo_ui":"Párrafo (texto largo)","label":"Indique quién o quienes se dedican a estos actos criminales.(nombres, apellidos, alias, dominicilio)","name":"quienes","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'"},
-        {"tipo_ui":"Párrafo (texto largo)","label":"Modo de operar de esta estructura criminal (por ejemplo: venta de droga expres o en via publica, asalto a mano armada, modo de desplazamiento, etc.)","name":"modus_operandi","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'"},
+        {"tipo_ui":"Texto (corto)","label":"¿Cuál es el nombre de la estructura criminal?","name":"nombre_estructura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'", "hint":None, "guidance_hint":None},
 
-        # ✅ Definición oculta Zona/Lugar (switch + note)
-        {"tipo_ui":"Selección única","label":"Definición (Zona/Lugar) — opcional","name":"show_def_zona","required":False,
-         "opciones":[opt_ver, opt_ocu],"appearance":"minimal","choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Indique quién o quienes se dedican a estos actos criminales.(nombres, apellidos, alias, dominicilio)","name":"quienes","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Nota (solo lectura)","label":"Zona = área amplia (barrio/sector). Lugar = punto específico (parada, parque, comercio, esquina).",
-         "name":"def_zona_note","required":False,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{show_def_zona}}='{v_ver}'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Modo de operar de esta estructura criminal (por ejemplo: venta de droga expres o en via publica, asalto a mano armada, modo de desplazamiento, etc.)","name":"modus_operandi","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{mantiene_info}}='{v_si}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Texto (corto)","label":"¿Cuál es el lugar o zona que usted considera más inseguro dentro de su area de responsabilidad?","name":"zona_insegura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Texto (corto)","label":"¿Cuál es el lugar o zona que usted considera más inseguro dentro de su area de responsabilidad?","name":"zona_insegura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None,
+         # ✅ esto SÍ lo muestra Survey123 (Web/Field) como ayuda
+         "hint":"Si necesita ayuda, toque el icono de información.",
+         "guidance_hint":"Zona = área amplia (barrio/sector). Lugar = punto específico (parada, parque, comercio, esquina)."
+        },
 
-        # ✅ Definición oculta “por qué”
-        {"tipo_ui":"Selección única","label":"Definición (cómo describir) — opcional","name":"show_def_por_que","required":False,
-         "opciones":[opt_ver, opt_ocu],"appearance":"minimal","choice_filter":None,"relevant":None},
-
-        {"tipo_ui":"Nota (solo lectura)","label":"Explique qué pasa ahí: tipo de delito o problema, horarios, frecuencia, actores y condiciones (iluminación, lotes baldíos, paradas, comercios, etc.).",
-         "name":"def_por_que_note","required":False,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{show_def_por_que}}='{v_ver}'"},
-
-        {"tipo_ui":"Párrafo (texto largo)","label":"Describa por qué considera que esa zona es insegura","name":"por_que_insegura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Describa por qué considera que esa zona es insegura","name":"por_que_insegura","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None,
+         "hint":"Incluya detalles claves (horario, frecuencia, qué ocurre).",
+         "guidance_hint":"Explique qué pasa ahí: tipo de delito o problema, horarios, frecuencia, actores y condiciones (iluminación, lotes baldíos, paradas, comercios, etc.)."
+        },
 
         # ================== Página 4: Información de Interés Interno ==================
-        {"tipo_ui":"Párrafo (texto largo)","label":"¿Qué recurso cree usted que hacen falta en su delegación para brindar una mejor labor al servicio a la ciudadanía?","name":"recurso_falta","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Párrafo (texto largo)","label":"¿Qué recurso cree usted que hacen falta en su delegación para brindar una mejor labor al servicio a la ciudadanía?","name":"recurso_falta","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
 
-        # ✅ Definición oculta condiciones aptas
-        {"tipo_ui":"Selección única","label":"Definición (condiciones aptas) — opcional","name":"show_def_cond","required":False,
-         "opciones":[opt_ver, opt_ocu],"appearance":"minimal","choice_filter":None,"relevant":None},
+        {"tipo_ui":"Selección única","label":"¿Considera usted que las condiciones de su delegación son aptas para satisfacer sus necesidades básicas? (buen dormir, alimentación, recurso móvil, etc.)","name":"condiciones_aptas","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None,
+         "hint":"Si tiene duda, use el ícono de información.",
+         "guidance_hint":"Piense en: descanso (buen dormir), alimentación, higiene, espacio, equipo mínimo y movilidad (recurso móvil)."
+        },
 
-        {"tipo_ui":"Nota (solo lectura)","label":"Piense en: descanso (buen dormir), alimentación, higiene, espacio, equipo mínimo y movilidad (recurso móvil).",
-         "name":"def_cond_note","required":False,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{show_def_cond}}='{v_ver}'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Cúales condiciones considera que se pueden mejorar.","name":"condiciones_mejorar","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{condiciones_aptas}}='{v_no}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Selección única","label":"¿Considera usted que las condiciones de su delegación son aptas para satisfacer sus necesidades básicas? (buen dormir, alimentación, recurso móvil, etc.)","name":"condiciones_aptas","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None},
+        {"tipo_ui":"Selección única","label":"¿Considera usted que hace falta capacitación para el personal en su delegacion policial?","name":"falta_capacitacion","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Párrafo (texto largo)","label":"Cúales condiciones considera que se pueden mejorar.","name":"condiciones_mejorar","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{condiciones_aptas}}='{v_no}'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique en que áreas necesita capacitación","name":"areas_capacitacion","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{falta_capacitacion}}='{v_si}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Selección única","label":"¿Considera usted que hace falta capacitación para el personal en su delegacion policial?","name":"falta_capacitacion","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique en que áreas necesita capacitación","name":"areas_capacitacion","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{falta_capacitacion}}='{v_si}'"},
+        {"tipo_ui":"Selección única","label":"¿Se siente usted motivado por la institución para brindar un buen servicio a la ciudadanía?","name":"motivado","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Selección única","label":"¿Se siente usted motivado por la institución para brindar un buen servicio a la ciudadanía?","name":"motivado","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique por qué lo considera así.","name":"motivo_no","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{motivado}}='{v_no}'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique por qué lo considera así.","name":"motivo_no","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{motivado}}='{v_no}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Selección única","label":"¿Mantiene usted conocimiento de situaciones anómalas que sucedan en su delegación? (Recuerde la información suministrada es de carácter confidencial)*","name":"anomalias","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique cuáles son las situaciones anómalas que se refiere","name":"detalle_anomalias","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{anomalias}}='{v_si}'"},
+        {"tipo_ui":"Selección única","label":"¿Mantiene usted conocimiento de situaciones anómalas que sucedan en su delegación? (Recuerde la información suministrada es de carácter confidencial)*","name":"anomalias","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Selección única","label":"¿Conoce oficiales de Fuerza Pública que se relacionen con alguna estructura criminal o cometan algún delito?","name":"oficiales_relacionados","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None},
-        {"tipo_ui":"Párrafo (texto largo)","label":"Describa la situación de la cual tiene conocimiento. (aporte nombre de la estructura, tipo de actividad, nombre de oficiales, función del oficial dentro de la organización, alias, etc.)","name":"describe_situacion","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{oficiales_relacionados}}='{v_si}'"},
+        {"tipo_ui":"Párrafo (texto largo)","label":"Especifique cuáles son las situaciones anómalas que se refiere","name":"detalle_anomalias","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{anomalias}}='{v_si}'", "hint":None, "guidance_hint":None},
 
-        {"tipo_ui":"Texto (corto)","label":"Desea, de manera voluntaria, dejar un medio de contacto para brindar más información (correo electrónico, número de teléfono, etc.)","name":"medio_contacto","required":False,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None}
+        {"tipo_ui":"Selección única","label":"¿Conoce oficiales de Fuerza Pública que se relacionen con alguna estructura criminal o cometan algún delito?","name":"oficiales_relacionados","required":True,"opciones":["Si","No"],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None},
+
+        {"tipo_ui":"Párrafo (texto largo)","label":"Describa la situación de la cual tiene conocimiento. (aporte nombre de la estructura, tipo de actividad, nombre de oficiales, función del oficial dentro de la organización, alias, etc.)","name":"describe_situacion","required":True,"opciones":[],"appearance":None,"choice_filter":None,"relevant":f"${{oficiales_relacionados}}='{v_si}'", "hint":None, "guidance_hint":None},
+
+        {"tipo_ui":"Texto (corto)","label":"Desea, de manera voluntaria, dejar un medio de contacto para brindar más información (correo electrónico, número de teléfono, etc.)","name":"medio_contacto","required":False,"opciones":[],"appearance":None,"choice_filter":None,"relevant":None, "hint":None, "guidance_hint":None}
     ]
 
     st.session_state.preguntas = seed
     st.session_state.seed_cargado = True
 
 # ==========================================================================================
-# Sidebar: Metadatos + Acciones rápidas (cascadas, exportar/importar JSON)
+# Sidebar: Metadatos + Acciones rápidas
 # ==========================================================================================
 with st.sidebar:
     st.header("⚙️ Configuración")
-
     form_title = st.text_input(
         "Título del formulario",
         value=(f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}"
@@ -328,7 +305,9 @@ with st.sidebar:
             "opciones": ["Alajuela (Central)", "Sabanilla", "Desamparados"],
             "appearance": None,
             "choice_filter": None,
-            "relevant": None
+            "relevant": None,
+            "hint": None,
+            "guidance_hint": None
         })
 
         usados.add(name_canton)
@@ -342,7 +321,9 @@ with st.sidebar:
             "opciones": ["— se rellena con la lista extendida —"],
             "appearance": None,
             "choice_filter": f"canton_key=${{{name_canton}}}",
-            "relevant": None
+            "relevant": None,
+            "hint": None,
+            "guidance_hint": None
         })
 
         if "choices_ext_rows" not in st.session_state:
@@ -385,8 +366,13 @@ with st.sidebar:
                 "reglas_finalizar": st.session_state.reglas_finalizar
             }
             jbuf = BytesIO(json.dumps(proj, ensure_ascii=False, indent=2).encode("utf-8"))
-            st.download_button("Descargar JSON", data=jbuf, file_name="proyecto_encuesta.json",
-                               mime="application/json", use_container_width=True)
+            st.download_button(
+                "Descargar JSON",
+                data=jbuf,
+                file_name="proyecto_encuesta.json",
+                mime="application/json",
+                use_container_width=True
+            )
 
     with col_imp:
         up = st.file_uploader("Importar JSON", type=["json"], label_visibility="collapsed")
@@ -411,13 +397,16 @@ with st.form("form_add_q", clear_on_submit=False):
     label = st.text_input("Etiqueta (texto exacto)")
     sugerido = slugify_name(label) if label else ""
 
-    col_n1, col_n2, col_n3 = st.columns([2, 1, 1])
+    col_n1, col_n2, col_n3 = st.columns([2,1,1])
     with col_n1:
         name = st.text_input("Nombre interno (XLSForm 'name')", value=sugerido)
     with col_n2:
         required = st.checkbox("Requerida", value=False)
     with col_n3:
         appearance = st.text_input("Appearance (opcional)", value="")
+
+    hint = st.text_input("Hint (texto corto debajo - opcional)", value="")
+    guidance_hint = st.text_area("Guidance hint (ayuda contextual - opcional)", height=90)
 
     opciones = []
     if tipo_ui in ("Selección única", "Selección múltiple"):
@@ -439,24 +428,25 @@ if add:
             "tipo_ui": tipo_ui,
             "label": label.strip(),
             "name": unico,
-            "required": (False if tipo_ui == "Nota (solo lectura)" else required),
+            "required": required,
             "opciones": opciones,
             "appearance": (appearance.strip() or None),
             "choice_filter": None,
-            "relevant": None
+            "relevant": None,
+            "hint": (hint.strip() or None),
+            "guidance_hint": (guidance_hint.strip() or None)
         }
         st.session_state.preguntas.append(nueva)
         st.success(f"Pregunta agregada: **{label}** (name: `{unico}`)")
 
 # ==========================================================================================
-# Panel de Condicionales (mostrar / finalizar)
+# Panel de Condicionales
 # ==========================================================================================
 st.subheader("🔀 Condicionales (mostrar / finalizar)")
 
 if not st.session_state.preguntas:
     st.info("Agrega preguntas para definir condicionales.")
 else:
-    # ----- Reglas de visibilidad -----
     with st.expander("👁️ Mostrar pregunta si se cumple condición", expanded=False):
         names = [q["name"] for q in st.session_state.preguntas]
         labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
@@ -465,13 +455,12 @@ else:
                               format_func=lambda n: f"{n} — {labels_by_name[n]}")
         src = st.selectbox("Depende de (source)", options=names,
                            format_func=lambda n: f"{n} — {labels_by_name[n]}")
-        op = st.selectbox("Operador", options=["=", "selected"],
-                          help="= para select_one; selected para select_multiple")
+        op = st.selectbox("Operador", options=["=", "selected"], help="= para select_one; selected para select_multiple")
 
         src_q = next((q for q in st.session_state.preguntas if q["name"] == src), None)
         vals = []
-        if src_q and src_q["opciones"]:
-            vals = st.multiselect("Valores que activan la visibilidad (elige texto; internamente se usa el 'name' slug)",
+        if src_q and src_q.get("opciones"):
+            vals = st.multiselect("Valores que activan la visibilidad (internamente se usa el 'name' slug)",
                                   options=src_q["opciones"])
             vals = [slugify_name(v) for v in vals]
         else:
@@ -496,18 +485,17 @@ else:
                     del st.session_state.reglas_visibilidad[i]
                     _rerun()
 
-    # ----- Reglas de finalización -----
     with st.expander("⏹️ Finalizar temprano si se cumple condición", expanded=False):
         names = [q["name"] for q in st.session_state.preguntas]
         labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
+
         src2 = st.selectbox("Condición basada en", options=names,
-                            format_func=lambda n: f"{n} — {labels_by_name[n]}",
-                            key="final_src")
+                            format_func=lambda n: f"{n} — {labels_by_name[n]}", key="final_src")
         op2 = st.selectbox("Operador", options=["=", "selected", "!="], key="final_op")
 
         src2_q = next((q for q in st.session_state.preguntas if q["name"] == src2), None)
         vals2 = []
-        if src2_q and src2_q["opciones"]:
+        if src2_q and src2_q.get("opciones"):
             vals2 = st.multiselect("Valores que disparan el fin (se usan como 'name' slug)",
                                    options=src2_q["opciones"], key="final_vals")
             vals2 = [slugify_name(v) for v in vals2]
@@ -542,31 +530,29 @@ if not st.session_state.preguntas:
 else:
     for idx, q in enumerate(st.session_state.preguntas):
         with st.container(border=True):
-            c1, c2, c3, c4, c5 = st.columns([4, 2, 2, 2, 2])
+            c1, c2, c3, c4, c5 = st.columns([4,2,2,2,2])
             c1.markdown(f"**{idx+1}. {q['label']}**")
             meta = f"type: {q['tipo_ui']}  •  name: `{q['name']}`  •  requerida: {'sí' if q['required'] else 'no'}"
             if q.get("appearance"): meta += f"  •  appearance: `{q['appearance']}`"
             if q.get("choice_filter"): meta += f"  •  choice_filter: `{q['choice_filter']}`"
             if q.get("relevant"): meta += f"  •  relevant: `{q['relevant']}`"
+            if q.get("hint"): meta += f"  •  hint: ✅"
+            if q.get("guidance_hint"): meta += f"  •  guidance_hint: ✅"
             c1.caption(meta)
 
             if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
                 c1.caption("Opciones: " + ", ".join(q.get("opciones") or []))
 
-            up = c2.button("⬆️ Subir", key=f"up_{idx}", use_container_width=True, disabled=(idx == 0))
-            down = c3.button("⬇️ Bajar", key=f"down_{idx}", use_container_width=True, disabled=(idx == len(st.session_state.preguntas)-1))
+            up = c2.button("⬆️ Subir", key=f"up_{idx}", use_container_width=True, disabled=(idx==0))
+            down = c3.button("⬇️ Bajar", key=f"down_{idx}", use_container_width=True, disabled=(idx==len(st.session_state.preguntas)-1))
             edit = c4.button("✏️ Editar", key=f"edit_{idx}", use_container_width=True)
             borrar = c5.button("🗑️ Eliminar", key=f"del_{idx}", use_container_width=True)
 
             if up:
-                st.session_state.preguntas[idx-1], st.session_state.preguntas[idx] = (
-                    st.session_state.preguntas[idx], st.session_state.preguntas[idx-1]
-                )
+                st.session_state.preguntas[idx-1], st.session_state.preguntas[idx] = st.session_state.preguntas[idx], st.session_state.preguntas[idx-1]
                 _rerun()
             if down:
-                st.session_state.preguntas[idx+1], st.session_state.preguntas[idx] = (
-                    st.session_state.preguntas[idx], st.session_state.preguntas[idx+1]
-                )
+                st.session_state.preguntas[idx+1], st.session_state.preguntas[idx] = st.session_state.preguntas[idx], st.session_state.preguntas[idx+1]
                 _rerun()
 
             if edit:
@@ -576,7 +562,10 @@ else:
                 ne_required = st.checkbox("Requerida", value=q["required"], key=f"e_req_{idx}")
                 ne_appearance = st.text_input("Appearance", value=q.get("appearance") or "", key=f"e_app_{idx}")
                 ne_choice_filter = st.text_input("choice_filter (opcional)", value=q.get("choice_filter") or "", key=f"e_cf_{idx}")
-                ne_relevant = st.text_input("relevant (opcional – se autogenera por reglas)", value=q.get("relevant") or "", key=f"e_rel_{idx}")
+                ne_relevant = st.text_input("relevant (opcional)", value=q.get("relevant") or "", key=f"e_rel_{idx}")
+
+                ne_hint = st.text_input("Hint (opcional)", value=q.get("hint") or "", key=f"e_hint_{idx}")
+                ne_guidance = st.text_area("Guidance hint (opcional)", value=q.get("guidance_hint") or "", height=90, key=f"e_gh_{idx}")
 
                 ne_opciones = q.get("opciones") or []
                 if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
@@ -591,14 +580,18 @@ else:
 
                     st.session_state.preguntas[idx]["label"] = ne_label.strip() or q["label"]
                     st.session_state.preguntas[idx]["name"] = ne_name_final
-                    st.session_state.preguntas[idx]["required"] = (False if q["tipo_ui"] == "Nota (solo lectura)" else ne_required)
+                    st.session_state.preguntas[idx]["required"] = ne_required
                     st.session_state.preguntas[idx]["appearance"] = ne_appearance.strip() or None
                     st.session_state.preguntas[idx]["choice_filter"] = ne_choice_filter.strip() or None
                     st.session_state.preguntas[idx]["relevant"] = ne_relevant.strip() or None
+                    st.session_state.preguntas[idx]["hint"] = ne_hint.strip() or None
+                    st.session_state.preguntas[idx]["guidance_hint"] = ne_guidance.strip() or None
                     if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
                         st.session_state.preguntas[idx]["opciones"] = ne_opciones
+
                     st.success("Cambios guardados.")
                     _rerun()
+
                 if col_cancel.button("Cancelar", key=f"e_cancel_{idx}", use_container_width=True):
                     _rerun()
 
@@ -619,63 +612,36 @@ INTRO_AMPLIADA = (
     "otras instituciones y la comunidad."
 )
 
-def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
-                      reglas_vis, reglas_fin):
-    """
-    Construye DataFrames: survey, choices, settings.
-    - Páginas con grupos begin_group/end_group y appearance=field-list
-    - Introducción con NOTE + media::image
-    - relevant (manual + del panel) y finalizar-temprano (NOT de previas)
-    - choices con columnas extra (cascadas)
-    """
+def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reglas_vis, reglas_fin):
     survey_rows = []
     choices_rows = []
 
     # Reglas de visibilidad (panel)
     vis_by_target = {}
     for r in reglas_vis:
-        vis_by_target.setdefault(r["target"], []).append({
-            "src": r["src"], "op": r.get("op", "="), "values": r.get("values", [])
-        })
+        vis_by_target.setdefault(r["target"], []).append({"src": r["src"], "op": r.get("op", "="), "values": r.get("values", [])})
 
-    # Reglas de finalizar temprano (panel)
-    fin_conds = []   # [(index_src, cond_expr)]
+    # Reglas de finalizar temprano
+    fin_conds = []
     for r in reglas_fin:
         cond = build_relevant_expr([{"src": r["src"], "op": r.get("op","="), "values": r.get("values",[])}])
         if cond:
             fin_conds.append((r["index_src"], cond))
 
-    # ------------------- Página 1: INTRODUCCIÓN -------------------
+    # Página 1: Intro
     survey_rows.append({"type":"begin_group","name":"p1_intro","label":"Introducción","appearance":"field-list"})
     survey_rows.append({"type":"note","name":"intro_logo","label":form_title, "media::image": logo_media_name})
     survey_rows.append({"type":"note","name":"intro_texto","label":INTRO_AMPLIADA})
     survey_rows.append({"type":"end_group","name":"p1_end"})
 
-    # Páginas por name (OJO: aquí se incluyen también show_def_* y def_* para que sí aparezcan)
-    pagina2 = {
-        "anos_servicio","edad","genero","escolaridad","manual_puesto",
-        "agente_ii","sub_oficial_i","sub_oficial_ii","oficial_i"
-    }
-
-    pagina3 = {
-        "mantiene_info","tipo_actividad","nombre_estructura","quienes","modus_operandi",
-        "show_def_zona","def_zona_note","zona_insegura",
-        "show_def_por_que","def_por_que_note","por_que_insegura"
-    }
-
-    pagina4 = {
-        "recurso_falta",
-        "show_def_cond","def_cond_note","condiciones_aptas",
-        "condiciones_mejorar","falta_capacitacion","areas_capacitacion",
-        "motivado","motivo_no","anomalias","detalle_anomalias",
-        "oficiales_relacionados","describe_situacion","medio_contacto"
-    }
+    # Páginas (por name)
+    pagina2 = {"anos_servicio","edad","genero","escolaridad","manual_puesto","agente_ii","sub_oficial_i","sub_oficial_ii","oficial_i"}
+    pagina3 = {"mantiene_info","tipo_actividad","nombre_estructura","quienes","modus_operandi","zona_insegura","por_que_insegura"}
+    pagina4 = {"recurso_falta","condiciones_aptas","condiciones_mejorar","falta_capacitacion","areas_capacitacion","motivado","motivo_no","anomalias","detalle_anomalias","oficiales_relacionados","describe_situacion","medio_contacto"}
 
     def add_q(q, idx):
-        """Agrega fila survey y choices si aplica."""
         x_type, default_app, list_name = map_tipo_to_xlsform(q["tipo_ui"], q["name"])
 
-        # relevant final = manual + panel + fin-temprano
         rel_manual = q.get("relevant") or None
         rel_panel  = build_relevant_expr(vis_by_target.get(q["name"], []))
 
@@ -691,22 +657,18 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
             rel_final = parts[0] if len(parts) == 1 else "(" + ") and (".join(parts) + ")"
 
         row = {"type": x_type, "name": q["name"], "label": q["label"]}
-
-        # note nunca required
-        if q.get("required") and x_type != "note":
-            row["required"] = "yes"
-
+        if q.get("required"): row["required"] = "yes"
         app = q.get("appearance") or default_app
-        if app:
-            row["appearance"] = app
-        if q.get("choice_filter"):
-            row["choice_filter"] = q["choice_filter"]
-        if rel_final:
-            row["relevant"] = rel_final
+        if app: row["appearance"] = app
+        if q.get("choice_filter"): row["choice_filter"] = q["choice_filter"]
+        if rel_final: row["relevant"] = rel_final
+
+        # ✅ NUEVO: ayudas
+        if q.get("hint"): row["hint"] = q["hint"]
+        if q.get("guidance_hint"): row["guidance_hint"] = q["guidance_hint"]
 
         survey_rows.append(row)
 
-        # Choices
         if list_name:
             usados = set()
             for opt_label in (q.get("opciones") or []):
@@ -715,28 +677,28 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
                 usados.add(opt_name)
                 choices_rows.append({"list_name": list_name, "name": opt_name, "label": str(opt_label)})
 
-    # ------------------- Página 2 -------------------
+    # Página 2
     survey_rows.append({"type":"begin_group","name":"p2_datos","label":"Datos","appearance":"field-list"})
     for i, q in enumerate(preguntas):
         if q["name"] in pagina2:
             add_q(q, i)
     survey_rows.append({"type":"end_group","name":"p2_end"})
 
-    # ------------------- Página 3 -------------------
+    # Página 3
     survey_rows.append({"type":"begin_group","name":"p3_policial","label":"Información de Interés Policial","appearance":"field-list"})
     for i, q in enumerate(preguntas):
         if q["name"] in pagina3:
             add_q(q, i)
     survey_rows.append({"type":"end_group","name":"p3_end"})
 
-    # ------------------- Página 4 -------------------
+    # Página 4
     survey_rows.append({"type":"begin_group","name":"p4_interno","label":"Información de Interés Interno","appearance":"field-list"})
     for i, q in enumerate(preguntas):
         if q["name"] in pagina4:
             add_q(q, i)
     survey_rows.append({"type":"end_group","name":"p4_end"})
 
-    # Choices extendidos (cascadas)
+    # Cascadas
     if "choices_ext_rows" in st.session_state:
         for r in st.session_state.choices_ext_rows:
             choices_rows.append(dict(r))
@@ -745,7 +707,7 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     survey_cols_all = set()
     for r in survey_rows:
         survey_cols_all.update(r.keys())
-    survey_cols = [c for c in ["type","name","label","required","appearance","choice_filter","relevant","media::image"] if c in survey_cols_all]
+    survey_cols = [c for c in ["type","name","label","hint","guidance_hint","required","appearance","choice_filter","relevant","media::image"] if c in survey_cols_all]
     for k in sorted(survey_cols_all):
         if k not in survey_cols:
             survey_cols.append(k)
@@ -760,13 +722,12 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
             base_choice_cols.append(extra)
     df_choices = pd.DataFrame(choices_rows, columns=base_choice_cols) if choices_rows else pd.DataFrame(columns=base_choice_cols)
 
-    # SETTINGS: style="pages"
     df_settings = pd.DataFrame([{
         "form_title": form_title,
         "version": version,
         "default_language": idioma,
         "style": "pages"
-    }], columns=["form_title", "version", "default_language", "style"])
+    }], columns=["form_title","version","default_language","style"])
 
     return df_survey, df_choices, df_settings
 
@@ -783,8 +744,7 @@ def descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo: 
             ws = writer.sheets[sheet]
             ws.freeze_panes(1, 0)
             ws.set_row(0, None, fmt_hdr)
-            cols = list(df.columns)
-            for col_idx, col_name in enumerate(cols):
+            for col_idx, col_name in enumerate(list(df.columns)):
                 ws.set_column(col_idx, col_idx, max(14, min(60, len(str(col_name)) + 12)))
 
     buffer.seek(0)
@@ -802,13 +762,6 @@ def descargar_excel_xlsform(df_survey, df_choices, df_settings, nombre_archivo: 
 st.markdown("---")
 st.subheader("📦 Generar XLSForm (Excel) para Survey123")
 
-st.caption("""
-El archivo incluirá:
-- **survey** con tipos, `relevant`, `choice_filter`, `appearance` y `media::image` (introducción),
-- **choices** con listas,
-- **settings** con título, versión, idioma y **style = pages**.
-""")
-
 if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st.session_state.preguntas):
     try:
         names = [q["name"] for q in st.session_state.preguntas]
@@ -825,7 +778,7 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
                 reglas_fin=st.session_state.reglas_finalizar
             )
 
-            st.success("XLSForm construido. Revisa una vista previa rápida:")
+            st.success("XLSForm construido. Vista previa:")
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("**Hoja: survey**")
@@ -852,18 +805,16 @@ if st.button("🧮 Construir XLSForm", use_container_width=True, disabled=not st
                 )
 
             st.info("""
-✅ **Cómo ver las definiciones en Survey123 Web**
-- En la página donde está la pregunta, verás una línea **“Definición … — opcional”**.
-- Si seleccionás **“Ver definición”**, aparece una **NOTA** con el texto.
-- Si seleccionás **“Ocultar”** (o no tocás nada), no aparece nada.
-            
-⚠️ Importante: para que esto se refleje en el link web, debés **republicar** el formulario después de cargar el XLSForm nuevo.
+✅ Para que se vea en Survey123 Web:
+1) Importá el XLSForm en **Survey123 Connect**
+2) **Publish**
+3) Abrí el nuevo link (o en incógnito) porque el share viejo puede quedar cacheado.
 """)
     except Exception as e:
         st.error(f"Ocurrió un error al generar el XLSForm: {e}")
 
 st.markdown("""
 ---
-🧠 **Clave**: en Survey123 Web no existe “hover tooltip” confiable para palabras.
-La única forma 100% estable es: **un control (Ver definición) + una NOTA** condicionada con `relevant`.
+🟢 **Esto sí funciona en web/field**: `hint` y `guidance_hint`.  
+🔴 **Hover/tooltip real en una palabra**: no es confiable en Survey123 Web.
 """)
