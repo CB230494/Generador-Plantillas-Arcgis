@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
-# App: XLSForm Survey123 — Portada + Consentimiento (Página 1 y 2)
-# - Página 1: Portada con logo + nombre delegación + introducción corta (exacta)
-# - Página 2: Consentimiento Informado (exacto) + pregunta ¿Acepta? (Sí/No)
-# - Si responde "No" => finaliza (end)
+# App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales (Páginas 1,2,3)
+# - Página 1: Introducción con logo + nombre delegación + texto corto (exacto)
+# - Página 2: Consentimiento Informado (mismo contenido) con formato más compacto
+#            + pregunta ¿Acepta participar? (Sí/No)
+#            + Si responde "No" => finaliza (end)
+# - Página 3: Datos Generales (según imágenes) — SOLO si acepta "Sí"
+#            + Condicionales en pregunta 5 (5.1 / 5.2 / 5.3 / 5.4)
 # - Exporta XLSForm (Excel) con hojas: survey / choices / settings
 # ==========================================================================================
 
@@ -17,14 +20,14 @@ import pandas as pd
 # ==========================================================================================
 # Configuración
 # ==========================================================================================
-st.set_page_config(page_title="XLSForm Survey123 — Portada + Consentimiento", layout="wide")
-st.title("XLSForm Survey123 — Portada + Consentimiento (Páginas 1 y 2)")
+st.set_page_config(page_title="XLSForm Survey123 — Introducción + Consentimiento + Datos", layout="wide")
+st.title("XLSForm Survey123 — Introducción + Consentimiento + Datos Generales")
 
 st.markdown("""
-Esta app genera un **XLSForm** listo para **ArcGIS Survey123 (Connect/Web Designer)** con:
-- **Página 1**: Portada/Introducción.
-- **Página 2**: Consentimiento Informado + Aceptación (Sí/No).
-- Si la persona responde **No**, la encuesta **finaliza**.
+Genera un **XLSForm** listo para **ArcGIS Survey123** con páginas reales (Next/Back):
+- **Página 1**: Introducción (logo + delegación + texto).
+- **Página 2**: Consentimiento Informado (compacto) + aceptación.
+- **Página 3**: Datos Generales (con condicionales en la pregunta 5).
 """)
 
 # ==========================================================================================
@@ -59,7 +62,7 @@ def descargar_xlsform(df_survey, df_choices, df_settings, nombre_archivo: str):
             ws.freeze_panes(1, 0)
             ws.set_row(0, None, fmt_hdr)
             for col_idx, col_name in enumerate(df.columns):
-                ws.set_column(col_idx, col_idx, max(14, min(70, len(str(col_name)) + 10)))
+                ws.set_column(col_idx, col_idx, max(14, min(80, len(str(col_name)) + 10)))
 
     buffer.seek(0)
     st.download_button(
@@ -84,7 +87,6 @@ with col_logo:
         st.session_state["_logo_bytes"] = up_logo.getvalue()
         st.session_state["_logo_name"] = up_logo.name
     else:
-        # intenta mostrar logo local si existe
         try:
             st.image(DEFAULT_LOGO_PATH, caption="Logo (001.png)", use_container_width=True)
             st.session_state["_logo_bytes"] = None
@@ -113,72 +115,190 @@ INTRO_CORTA_EXACTA = (
     "Fuerza Pública para apoyar la planificación preventiva y la mejora del servicio policial."
 )
 
-# Página 2: Consentimiento (exacto del primer texto / imagen)
+# Consentimiento (mismo contenido, más compacto en 1 NOTE)
 CONSENT_TITLE = "Consentimiento Informado para la Participación en la Encuesta"
 
-CONSENT_PARRAFOS = [
-    "Usted está siendo invitado(a) a participar de forma libre y voluntaria en una encuesta sobre seguridad, convivencia y percepción ciudadana, dirigida a personas mayores de 18 años.",
-    "El objetivo de esta encuesta es recopilar información de carácter preventivo y estadístico, con el fin de apoyar la planificación de acciones de prevención, mejora de la convivencia y fortalecimiento de la seguridad en comunidades y zonas comerciales.",
-    "La participación es totalmente voluntaria. Usted puede negarse a responder cualquier pregunta, así como retirarse de la encuesta en cualquier momento, sin que ello genere consecuencia alguna.",
-    "De conformidad con lo dispuesto en el artículo 5 de la Ley N.º 8968, Ley de Protección de la Persona frente al Tratamiento de sus Datos Personales, se le informa que:"
-]
-
-CONSENT_BULLETS = [
-    "Finalidad del tratamiento: La información recopilada será utilizada exclusivamente para fines estadísticos, analíticos y preventivos, y no para investigaciones penales, procesos judiciales, sanciones administrativas ni procedimientos disciplinarios.",
-    "Datos personales: Algunos apartados permiten, de forma voluntaria, el suministro de datos personales o información de contacto.",
-    "Tratamiento de los datos: Los datos serán almacenados, analizados y resguardados bajo criterios de confidencialidad y seguridad, conforme a la normativa vigente.",
-    "Destinatarios y acceso: La información será conocida únicamente por el personal autorizado de la Fuerza Pública / Ministerio de Seguridad Pública, para los fines indicados. No será cedida a terceros ajenos a estos fines.",
-    "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección de Programas Policiales Preventivos, Oficina Estrategia Integral de Prevención para la Seguridad Pública (EIPSEP / Estrategia Sembremos Seguridad) será el responsable del tratamiento y custodia de la información recolectada.",
-    "Derechos de la persona participante: Usted conserva el derecho a la autodeterminación informativa y a decidir libremente sobre el suministro de sus datos."
-]
-
-CONSENT_CIERRE = [
-    "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales correspondientes.",
-    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar."
-]
+CONSENT_TXT_COMPACTO = (
+    "Usted está siendo invitado(a) a participar de forma libre y voluntaria en una encuesta sobre seguridad, "
+    "convivencia y percepción ciudadana, dirigida a personas mayores de 18 años.\n\n"
+    "El objetivo de esta encuesta es recopilar información de carácter preventivo y estadístico, con el fin "
+    "de apoyar la planificación de acciones de prevención, mejora de la convivencia y fortalecimiento de "
+    "la seguridad en comunidades y zonas comerciales.\n\n"
+    "La participación es totalmente voluntaria. Usted puede negarse a responder cualquier pregunta, así "
+    "como retirarse de la encuesta en cualquier momento, sin que ello genere consecuencia alguna.\n\n"
+    "De conformidad con lo dispuesto en el artículo 5 de la Ley N.º 8968, Ley de Protección de la Persona "
+    "frente al Tratamiento de sus Datos Personales, se le informa que:\n"
+    "• Finalidad del tratamiento: La información recopilada será utilizada exclusivamente para fines "
+    "estadísticos, analíticos y preventivos, y no para investigaciones penales, procesos judiciales, "
+    "sanciones administrativas ni procedimientos disciplinarios.\n"
+    "• Datos personales: Algunos apartados permiten, de forma voluntaria, el suministro de datos "
+    "personales o información de contacto.\n"
+    "• Tratamiento de los datos: Los datos serán almacenados, analizados y resguardados bajo criterios "
+    "de confidencialidad y seguridad, conforme a la normativa vigente.\n"
+    "• Destinatarios y acceso: La información será conocida únicamente por el personal autorizado "
+    "de la Fuerza Pública / Ministerio de Seguridad Pública, para los fines indicados. No será cedida "
+    "a terceros ajenos a estos fines.\n"
+    "• Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección "
+    "de Programas Policiales Preventivos, Oficina Estrategia Integral de Prevención para la Seguridad "
+    "Pública (EIPSEP / Estrategia Sembremos Seguridad) será el responsable del tratamiento y custodia "
+    "de la información recolectada.\n"
+    "• Derechos de la persona participante: Usted conserva el derecho a la autodeterminación informativa "
+    "y a decidir libremente sobre el suministro de sus datos.\n\n"
+    "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales "
+    "correspondientes.\n\n"
+    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior "
+    "y otorga su consentimiento informado para participar."
+)
 
 # ==========================================================================================
-# Construir XLSForm (survey/choices/settings)
+# Construcción XLSForm
 # ==========================================================================================
-def construir_xlsform_portada_consentimiento(form_title: str, logo_media_name: str, idioma: str, version: str):
+def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, version: str):
     survey_rows = []
     choices_rows = []
 
-    # Lista Sí/No para aceptación
+    # =========================
+    # Choices (listas)
+    # =========================
+    # Sí/No (aceptación)
     list_yesno = "yesno"
-    v_si = slugify_name("Sí")   # ojo: en choices el name es slug
+    v_si = slugify_name("Sí")
     v_no = slugify_name("No")
-
     choices_rows.extend([
         {"list_name": list_yesno, "name": v_si, "label": "Sí"},
         {"list_name": list_yesno, "name": v_no, "label": "No"},
     ])
 
-    # ------------------- Página 1: PORTADA -------------------
-    survey_rows.append({"type": "begin_group", "name": "p1_portada", "label": "Portada", "appearance": "field-list"})
-    survey_rows.append({"type": "note", "name": "p1_logo", "label": form_title, "media::image": logo_media_name})
-    survey_rows.append({"type": "note", "name": "p1_intro", "label": INTRO_CORTA_EXACTA})
+    # Edad (rangos)
+    list_edad = "edad_rangos"
+    edad_opts = ["18 a 29 años", "30 a 44 años", "45 a 59 años", "60 años o más"]
+    for o in edad_opts:
+        choices_rows.append({"list_name": list_edad, "name": slugify_name(o), "label": o})
+
+    # Género
+    list_genero = "genero"
+    genero_opts = ["Femenino", "Masculino", "Persona No Binaria", "Prefiero no decir"]
+    for o in genero_opts:
+        choices_rows.append({"list_name": list_genero, "name": slugify_name(o), "label": o})
+
+    # Escolaridad
+    list_escolaridad = "escolaridad"
+    escolaridad_opts = [
+        "Ninguna",
+        "Primaria incompleta",
+        "Primaria completa",
+        "Secundaria incompleta",
+        "Secundaria completa",
+        "Técnico",
+        "Universitaria incompleta",
+        "Universitaria completa",
+    ]
+    for o in escolaridad_opts:
+        choices_rows.append({"list_name": list_escolaridad, "name": slugify_name(o), "label": o})
+
+    # Clase policial (pregunta 5)
+    list_clase = "clase_policial"
+    clase_opts = [
+        "Agente I",
+        "Agente II",
+        "Suboficial I",
+        "Suboficial II",
+        "Oficial I",
+        "Sub Jefe de delegación",
+        "Jefe de delegación",
+    ]
+    for o in clase_opts:
+        choices_rows.append({"list_name": list_clase, "name": slugify_name(o), "label": o})
+
+    # 5.1 Agente II (sublista)
+    list_agente_ii = "agente_ii_det"
+    agente_ii_opts = [
+        "Agente de Fronteras",
+        "Agente de Programa Preventivo",
+        "Agente Armero",
+        "Agente Conductor Operacional de Vehículos Oficiales",
+        "Agente de Seguridad Turística",
+        "Agente de Comunicaciones",
+        "Agente de Operaciones",
+    ]
+    for o in agente_ii_opts:
+        choices_rows.append({"list_name": list_agente_ii, "name": slugify_name(o), "label": o})
+
+    # 5.2 Suboficial I (sublista)
+    list_subof_i = "suboficial_i_det"
+    subof_i_opts = [
+        "Encargado Equipo Operativo Policial",
+        "Encargado Equipo de Seguridad Turística",
+        "Encargado Equipo de Fronteras",
+        "Encargado Equipo de Comunicaciones",
+        "Encargado de Programas Preventivos",
+        "Encargado Agentes Armeros",
+    ]
+    for o in subof_i_opts:
+        choices_rows.append({"list_name": list_subof_i, "name": slugify_name(o), "label": o})
+
+    # 5.3 Suboficial II (sublista)
+    list_subof_ii = "suboficial_ii_det"
+    subof_ii_opts = [
+        "Encargado Subgrupo Operativo Policial",
+        "Encargado Subgrupo de Seguridad Turística",
+        "Encargado Subgrupo de Fronteras",
+        "Oficial de Guardia",
+        "Encargado de Operaciones",
+    ]
+    for o in subof_ii_opts:
+        choices_rows.append({"list_name": list_subof_ii, "name": slugify_name(o), "label": o})
+
+    # 5.4 Oficial I (sublista)
+    list_of_i = "oficial_i_det"
+    of_i_opts = [
+        "Jefe Delegación Distrital",
+        "Encargado Grupo Operativo Policial",
+    ]
+    for o in of_i_opts:
+        choices_rows.append({"list_name": list_of_i, "name": slugify_name(o), "label": o})
+
+    # =========================
+    # Página 1: Introducción (SIN la palabra “Portada”)
+    # =========================
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p1_intro",
+        "label": "Introducción",
+        "appearance": "field-list"
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p1_logo",
+        "label": form_title,
+        "media::image": logo_media_name
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p1_texto",
+        "label": INTRO_CORTA_EXACTA
+    })
     survey_rows.append({"type": "end_group", "name": "p1_end"})
 
-    # ------------------- Página 2: CONSENTIMIENTO -------------------
-    survey_rows.append({"type": "begin_group", "name": "p2_consentimiento", "label": "Consentimiento", "appearance": "field-list"})
-
-    # Título (note)
-    survey_rows.append({"type": "note", "name": "p2_titulo", "label": CONSENT_TITLE})
-
-    # Párrafos
-    for i, p in enumerate(CONSENT_PARRAFOS, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_p_{i}", "label": p})
-
-    # Viñetas (en notes separadas para que quede claro en Survey123)
-    for j, b in enumerate(CONSENT_BULLETS, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_b_{j}", "label": f"• {b}"})
-
-    # Cierre
-    for k, c in enumerate(CONSENT_CIERRE, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_c_{k}", "label": c})
-
-    # Pregunta aceptación
+    # =========================
+    # Página 2: Consentimiento (compacto)
+    # =========================
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p2_consent",
+        "label": "Consentimiento Informado",
+        "appearance": "field-list"
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p2_titulo",
+        "label": CONSENT_TITLE
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p2_texto",
+        "label": CONSENT_TXT_COMPACTO
+    })
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "acepta_participar",
@@ -186,10 +306,9 @@ def construir_xlsform_portada_consentimiento(form_title: str, logo_media_name: s
         "required": "yes",
         "appearance": "minimal"
     })
-
     survey_rows.append({"type": "end_group", "name": "p2_end"})
 
-    # Si NO acepta, finalizar
+    # Finalizar si NO acepta
     survey_rows.append({
         "type": "end",
         "name": "fin_por_no",
@@ -197,17 +316,116 @@ def construir_xlsform_portada_consentimiento(form_title: str, logo_media_name: s
         "relevant": f"${{acepta_participar}}='{v_no}'"
     })
 
-    # (Las páginas siguientes se agregarán después, con relevant = acepta Sí)
-    # Ejemplo (no se agrega aún):
-    # relevant: ${acepta_participar}='si'
+    # =========================
+    # Página 3: Datos Generales (SOLO si acepta SÍ)
+    # =========================
+    rel_si = f"${{acepta_participar}}='{v_si}'"
 
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p3_datos_generales",
+        "label": "Datos generales",
+        "appearance": "field-list",
+        "relevant": rel_si
+    })
+
+    # 1 Años de servicio (0 a 50)
+    survey_rows.append({
+        "type": "integer",
+        "name": "anos_servicio",
+        "label": "1- Años de servicio:",
+        "required": "yes",
+        "constraint": ". >= 0 and . <= 50",
+        "constraint_message": "Debe ser un número entre 0 y 50.",
+        "hint": "Indique únicamente la cantidad de años completos de servicio (en números). Asignar un formato de 0 a 50 años.",
+        "relevant": rel_si
+    })
+
+    # 2 Edad (rangos)
+    survey_rows.append({
+        "type": f"select_one {list_edad}",
+        "name": "edad_rango",
+        "label": "2- Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
+        "required": "yes",
+        "relevant": rel_si
+    })
+
+    # 3 Género
+    survey_rows.append({
+        "type": f"select_one {list_genero}",
+        "name": "genero",
+        "label": "3- ¿Con cuál de estas opciones se identifica?",
+        "required": "yes",
+        "relevant": rel_si
+    })
+
+    # 4 Escolaridad
+    survey_rows.append({
+        "type": f"select_one {list_escolaridad}",
+        "name": "escolaridad",
+        "label": "4- Escolaridad:",
+        "required": "yes",
+        "relevant": rel_si
+    })
+
+    # 5 Clase policial
+    survey_rows.append({
+        "type": f"select_one {list_clase}",
+        "name": "clase_policial",
+        "label": "5- ¿Qué clase policial desempeña en su delegación?",
+        "required": "yes",
+        "relevant": rel_si
+    })
+
+    # Condicionales según nota (5.1 / 5.2 / 5.3 / 5.4)
+    rel_agente_ii = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Agente II')}')"
+    rel_subof_i   = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Suboficial I')}')"
+    rel_subof_ii  = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Suboficial II')}')"
+    rel_of_i      = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Oficial I')}')"
+
+    survey_rows.append({
+        "type": f"select_one {list_agente_ii}",
+        "name": "agente_ii",
+        "label": "5.1- Agente II",
+        "required": "yes",
+        "relevant": rel_agente_ii
+    })
+
+    survey_rows.append({
+        "type": f"select_one {list_subof_i}",
+        "name": "suboficial_i",
+        "label": "5.2- Suboficial I",
+        "required": "yes",
+        "relevant": rel_subof_i
+    })
+
+    survey_rows.append({
+        "type": f"select_one {list_subof_ii}",
+        "name": "suboficial_ii",
+        "label": "5.3- Suboficial II",
+        "required": "yes",
+        "relevant": rel_subof_ii
+    })
+
+    survey_rows.append({
+        "type": f"select_one {list_of_i}",
+        "name": "oficial_i",
+        "label": "5.4 Oficial I",
+        "required": "yes",
+        "relevant": rel_of_i
+    })
+
+    survey_rows.append({"type": "end_group", "name": "p3_end"})
+
+    # =========================
     # DataFrames
-    # Columnas típicas de XLSForm
-    survey_cols = ["type", "name", "label", "required", "appearance", "relevant", "media::image"]
+    # =========================
+    survey_cols = [
+        "type", "name", "label", "required", "appearance",
+        "relevant", "media::image", "constraint", "constraint_message", "hint"
+    ]
     df_survey = pd.DataFrame(survey_rows, columns=survey_cols).fillna("")
-
     df_choices = pd.DataFrame(choices_rows, columns=["list_name", "name", "label"]).fillna("")
-
     df_settings = pd.DataFrame([{
         "form_title": form_title,
         "version": version,
@@ -228,7 +446,7 @@ version_auto = datetime.now().strftime("%Y%m%d%H%M")
 version = st.text_input("Versión (settings.version)", value=version_auto)
 
 if st.button("🧮 Construir XLSForm", use_container_width=True):
-    df_survey, df_choices, df_settings = construir_xlsform_portada_consentimiento(
+    df_survey, df_choices, df_settings = construir_xlsform(
         form_title=form_title,
         logo_media_name=logo_media_name,
         idioma=idioma,
@@ -266,4 +484,5 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
+
 
