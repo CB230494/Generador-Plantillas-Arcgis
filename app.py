@@ -557,7 +557,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "10.1- Cuáles condiciones considera que se pueden mejorar.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": HINT_ABIERTA_SIMPLE,
         "relevant": rel_10_no
     })
 
@@ -579,7 +578,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "11.1 Especifique en qué áreas necesita capacitación.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": HINT_ABIERTA_SIMPLE,
         "relevant": rel_11_si
     })
 
@@ -601,7 +599,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "12.1 De manera general, indique por qué lo considera así.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": HINT_ABIERTA_SIMPLE,
         "relevant": rel_12_poco_nada
     })
 
@@ -624,7 +621,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "13.1 Describa, de manera general, las situaciones a las que se refiere, relacionadas con aspectos operativos, administrativos o de servicio.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": "Respuesta abierta. Información confidencial.",
+        "hint": "Información confidencial.",
         "relevant": rel_13_si
     })
 
@@ -647,7 +644,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "14.1 Describa la situación de la cual tiene conocimiento. (aporte nombre de la estructura, tipo de actividad, nombre de oficiales, función del oficial dentro de la organización, alias, etc.)",
         "required": "yes",
         "appearance": "multiline",
-        "hint": HINT_CONFIDENCIAL,
         "relevant": rel_14_si
     })
 
@@ -729,5 +725,6 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
+
 
 
