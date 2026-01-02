@@ -14,6 +14,11 @@
 #            + Condicionales: 10.1 si 10="No"; 11.1 si 11="Sí"; 12.1 si 12 in ("Poco","Nada")
 #                             13.1 si 13="Sí"; 14.1 si 14="Sí"
 #            + 15 opcional (contacto voluntario)
+# - NUEVO: Glosarios por página (acceso opcional al final de la página)
+#          * Página 4: Glosario — términos del glosario identificados en esa página
+#          * Página 5: Glosario — términos del glosario identificados en esa página
+#          (La pregunta para acceder NO es obligatoria; si marca Sí, aparece la página Glosario;
+#           puede volver con "Anterior" para seguir donde estaba.)
 # - Exporta XLSForm (Excel) con hojas: survey / choices / settings
 # ==========================================================================================
 
@@ -184,6 +189,39 @@ HINT_ANALISIS_PREVENTIVO = (
 )
 HINT_VOLUNTARIA = "Respuesta abierta. Información voluntaria."
 HINT_CONFIDENCIAL = "Respuesta abierta. Información de carácter confidencial."
+
+# ==========================================================================================
+# Glosarios (términos identificados por página)
+# ==========================================================================================
+GLOS_P4_ITEMS = [
+    ("Bunker (eje de expendio de drogas)", "tipo de construcción destinada a servir de refugio a consumidores de droga y a su vez es un expendio de drogas y armas."),
+    ("Extorsión", "el que para procurar un lucro injusto obligare a otro con int...ción patrimonial perjudicial para sí mismo o para un tercero."),
+    ("Hurto", "quien se apoderare ilegítimamente de una cosa mueble, total o parcialmente ajena, esto en aprovechamiento del descuido"),
+    ("Receptación", "quien adquiriere, recibiera y ocultare dinero, cosas o bienes...ipo o interviniere en su adquisición, recepción u ocultación."),
+    ("Contrabando", "quien introduzca o extraiga, transporte, almacene, adquiera, ...ocedencia introducida al país, eludiendo el control aduanero."),
+    ("Delitos sexuales", "atentar contra la libre elección sexual, contra su pudor, dent...n los delitos de violación, abusos deshonestos y acoso sexual."),
+    ("Daños/vandalismo", "quien destruyere, inutilizare, hiciere desaparecer, o de cualq...maniales (bienes del estado), contra persona física o jurídica"),
+    ("Estafa o defraudación", "quien induciendo a error a otra persona o manteniéndola en él...rídico para sí o para un tercero, lesione el patrimonio ajeno"),
+    ("Fraude informático", "persona que, con la intención de procurar u obtener un benefi...tra acción que incida en el proceso de los datos del sistema."),
+    ("Alteración de datos y sabotaje informático", "quien por cualquier medio accede, borre, suprima, modifique o...ice sin autorización los datos registrados en una computadora"),
+    ("Tráfico ilegal de personas", "conducir o transportar a personas para su ingreso al país o s...anjeras que ingresen al país o permanezcan ilegalmente en él."),
+    ("Robo a edificación (tacha)", "quien mediante el desprendimiento, ruptura, destrucción o forz...trare en una edificación, o en sus dependencias, o en un local."),
+    ("Robo a vivienda (tacha)", "quien mediante el desprendimiento, ruptura, destrucción o forz... y sustrajere alguna cosa mueble total o parcialmente ajena."),
+    ("Robo a vivienda (intimidación)", "quien en una vivienda ajena ejecutare el apoderamiento de una ...uridad propia o de terceros, en el lugar del hecho o después."),
+    ("Robo a comercio (tacha)", "quien mediante desprendimiento, ruptura, destrucción o forzami... y sustrajere alguna cosa mueble total o parcialmente ajena."),
+    ("Robo a comercio (intimidación)", "apoderamiento de cosa mueble total o parcialmente ajena, media...ón sobre las personas, sea para cometer el robo o para huir."),
+    ("Robo de vehículos", "apoderamiento o sustracción de un vehículo automotor de forma ilegítima con el fin de obtener un beneficio propio."),
+    ("Robo a vehículos (tacha)", "quien mediante la apertura sin autorización de un vehículo o d... total o parcialmente ajena que se encuentre en el interior."),
+    ("Robo de motocicletas/vehículos(bajonazo)", "apoderamiento de un vehículo o motocicleta por medio de violencia o intimidación a la víctima.")
+]
+
+GLOS_P5_ITEMS = [
+    ("Falta de capacitación policial", "deficiencia en la capacitación, doctrina policial, actualización jurídica, polígono y procedimientos policiales."),
+    ("Corrupción policial", "consiste en el uso indebido de sus atribuciones, recursos o i...o avances en la carrera profesional e incluso fines políticos"),
+    ("Inadecuado uso del recurso policial", "deficiente uso de los recursos que se tienen en una delegación policial para un eficiente servicio."),
+    ("Inefectividad en el servicio de policía", "baja respuesta por parte de fuerza pública ante cualquier incidencia, derivado de muchos factores que son relevantes."),
+    ("Necesidades básicas insatisfechas", "carencias críticas en las personas para vivir de forma adecua...ación básica, ingreso mínimo, servicios públicos esenciales).")
+]
 
 # ==========================================================================================
 # Construcción XLSForm
@@ -516,7 +554,41 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
+    # Acceso opcional a Glosario (NO obligatorio)
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "ver_glosario_p4",
+        "label": "¿Desea acceder al glosario de esta sección?",
+        "required": "no",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+
     survey_rows.append({"type": "end_group", "name": "p4_end"})
+
+    # Página 4.5: Glosario Interés policial (condicional si responde Sí)
+    rel_glos_p4 = f"({rel_si}) and (${{ver_glosario_p4}}='{v_si}')"
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p4_5_glosario",
+        "label": "Glosario — Información de interés policial",
+        "appearance": "field-list",
+        "relevant": rel_glos_p4
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p4_5_glosario_info",
+        "label": "Si desea volver a la sección anterior, utilice el botón “Anterior”.",
+        "relevant": rel_glos_p4
+    })
+    for i, (term, defin) in enumerate(GLOS_P4_ITEMS, start=1):
+        survey_rows.append({
+            "type": "note",
+            "name": f"p4_5_term_{i}",
+            "label": f"{term}: {defin}",
+            "relevant": rel_glos_p4
+        })
+    survey_rows.append({"type": "end_group", "name": "p4_5_end"})
 
     # =========================
     # Página 5: Interés interno (NUEVA)
@@ -657,7 +729,41 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
+    # Acceso opcional a Glosario (NO obligatorio)
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "ver_glosario_p5",
+        "label": "¿Desea acceder al glosario de esta sección?",
+        "required": "no",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+
     survey_rows.append({"type": "end_group", "name": "p5_end"})
+
+    # Página 5.5: Glosario Interés interno (condicional si responde Sí)
+    rel_glos_p5 = f"({rel_si}) and (${{ver_glosario_p5}}='{v_si}')"
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p5_5_glosario",
+        "label": "Glosario — Información de interés interno",
+        "appearance": "field-list",
+        "relevant": rel_glos_p5
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p5_5_glosario_info",
+        "label": "Si desea volver a la sección anterior, utilice el botón “Anterior”.",
+        "relevant": rel_glos_p5
+    })
+    for i, (term, defin) in enumerate(GLOS_P5_ITEMS, start=1):
+        survey_rows.append({
+            "type": "note",
+            "name": f"p5_5_term_{i}",
+            "label": f"{term}: {defin}",
+            "relevant": rel_glos_p5
+        })
+    survey_rows.append({"type": "end_group", "name": "p5_5_end"})
 
     # =========================
     # DataFrames
@@ -725,6 +831,3 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
-
-
-
