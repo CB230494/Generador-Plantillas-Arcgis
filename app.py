@@ -1,13 +1,14 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
-# App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales (Páginas 1,2,3)
-# - Página 1: Introducción con logo + nombre delegación + texto corto (exacto)
-# - Página 2: Consentimiento Informado (mismo contenido) pero FORMATEADO en NOTES separadas
-#            para que se vea ORDENADO (título + párrafos + viñetas + cierre)
+# App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial
+# - Página 1: Introducción con logo + delegación + texto corto (exacto)
+# - Página 2: Consentimiento Informado ORDENADO (título + párrafos + viñetas + cierre)
 #            + pregunta ¿Acepta participar? (Sí/No)
 #            + Si responde "No" => finaliza (end)
-# - Página 3: Datos Generales (según imágenes) — SOLO si acepta "Sí"
-#            + Condicionales en pregunta 5 (5.1 / 5.2 / 5.3 / 5.4)
+# - Página 3: Datos generales (según imágenes) + condicionales en pregunta 5
+# - Página 4: Información de interés policial (según imágenes)
+#            + 6 (Sí/No) y si "Sí" se habilitan 6.1 a 6.4
+#            + Notas: solo se incluyen las que DEBEN verse en la encuesta (nota previa confidencial y notas de respuesta)
 # - Exporta XLSForm (Excel) con hojas: survey / choices / settings
 # ==========================================================================================
 
@@ -21,14 +22,15 @@ import pandas as pd
 # ==========================================================================================
 # Configuración
 # ==========================================================================================
-st.set_page_config(page_title="XLSForm Survey123 — Introducción + Consentimiento + Datos", layout="wide")
-st.title("XLSForm Survey123 — Introducción + Consentimiento + Datos Generales")
+st.set_page_config(page_title="XLSForm Survey123 — (Páginas 1 a 4)", layout="wide")
+st.title("XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial")
 
 st.markdown("""
 Genera un **XLSForm** listo para **ArcGIS Survey123** con páginas reales (Next/Back):
 - **Página 1**: Introducción (logo + delegación + texto).
-- **Página 2**: Consentimiento Informado (ordenado).
-- **Página 3**: Datos Generales (con condicionales en la pregunta 5).
+- **Página 2**: Consentimiento Informado (ordenado) + aceptación.
+- **Página 3**: Datos generales (con condicionales en la pregunta 5).
+- **Página 4**: Información de interés policial (con condicionales 6.1–6.4 si 6 = “Sí”).
 """)
 
 # ==========================================================================================
@@ -74,6 +76,15 @@ def descargar_xlsform(df_survey, df_choices, df_settings, nombre_archivo: str):
         use_container_width=True
     )
 
+def add_choice_list(choices_rows, list_name: str, labels: list[str]):
+    """Agrega una lista de choices (list_name/name/label)."""
+    for lab in labels:
+        choices_rows.append({
+            "list_name": list_name,
+            "name": slugify_name(lab),
+            "label": lab
+        })
+
 # ==========================================================================================
 # Inputs (logo + delegación)
 # ==========================================================================================
@@ -109,7 +120,7 @@ form_title = f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}" if
 st.markdown(f"### {form_title}")
 
 # ==========================================================================================
-# Textos EXACTOS solicitados
+# Textos EXACTOS solicitados (P1 y P2)
 # ==========================================================================================
 INTRO_CORTA_EXACTA = (
     "Esta encuesta busca recopilar información desde la experiencia del personal de la \n"
@@ -135,9 +146,25 @@ CONSENT_BULLETS = [
 ]
 
 CONSENT_CIERRE = [
-    "Las respuestas brindadas no constituyen denunccias formales, ni sustituyen los mecanismos legales correspondientes.",
+    "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales correspondientes.",
     "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar."
 ]
+
+# ==========================================================================================
+# Página 4: Información de interés policial (texto visible que SÍ va en la encuesta)
+# ==========================================================================================
+P4_INTRO_TITULO = "Información de interés policial"
+P4_INTRO_TEXTO = (
+    "En este apartado, el objetivo principal es comprender las estructuras criminales y las "
+    "problemáticas de interés policial presentes en la jurisdicción de la delegación. A través "
+    "de esto se busca obtener una visión clara de la naturaleza y dinámicas de las organizaciones "
+    "criminales en la zona."
+)
+
+NOTA_PREVIA_CONFIDENCIAL = (
+    "Nota previa: La información solicitada en los siguientes apartados es de carácter "
+    "confidencial, para uso institucional y análisis preventivo. No constituye denuncia formal."
+)
 
 # ==========================================================================================
 # Construcción XLSForm
@@ -152,23 +179,16 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     list_yesno = "yesno"
     v_si = slugify_name("Sí")
     v_no = slugify_name("No")
-    choices_rows.extend([
-        {"list_name": list_yesno, "name": v_si, "label": "Sí"},
-        {"list_name": list_yesno, "name": v_no, "label": "No"},
-    ])
+    add_choice_list(choices_rows, list_yesno, ["Sí", "No"])
 
     list_edad = "edad_rangos"
-    edad_opts = ["18 a 29 años", "30 a 44 años", "45 a 59 años", "60 años o más"]
-    for o in edad_opts:
-        choices_rows.append({"list_name": list_edad, "name": slugify_name(o), "label": o})
+    add_choice_list(choices_rows, list_edad, ["18 a 29 años", "30 a 44 años", "45 a 59 años", "60 años o más"])
 
     list_genero = "genero"
-    genero_opts = ["Femenino", "Masculino", "Persona No Binaria", "Prefiero no decir"]
-    for o in genero_opts:
-        choices_rows.append({"list_name": list_genero, "name": slugify_name(o), "label": o})
+    add_choice_list(choices_rows, list_genero, ["Femenino", "Masculino", "Persona No Binaria", "Prefiero no decir"])
 
     list_escolaridad = "escolaridad"
-    escolaridad_opts = [
+    add_choice_list(choices_rows, list_escolaridad, [
         "Ninguna",
         "Primaria incompleta",
         "Primaria completa",
@@ -177,12 +197,10 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "Técnico",
         "Universitaria incompleta",
         "Universitaria completa",
-    ]
-    for o in escolaridad_opts:
-        choices_rows.append({"list_name": list_escolaridad, "name": slugify_name(o), "label": o})
+    ])
 
     list_clase = "clase_policial"
-    clase_opts = [
+    add_choice_list(choices_rows, list_clase, [
         "Agente I",
         "Agente II",
         "Suboficial I",
@@ -190,12 +208,10 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "Oficial I",
         "Sub Jefe de delegación",
         "Jefe de delegación",
-    ]
-    for o in clase_opts:
-        choices_rows.append({"list_name": list_clase, "name": slugify_name(o), "label": o})
+    ])
 
     list_agente_ii = "agente_ii_det"
-    agente_ii_opts = [
+    add_choice_list(choices_rows, list_agente_ii, [
         "Agente de Fronteras",
         "Agente de Programa Preventivo",
         "Agente Armero",
@@ -203,40 +219,58 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "Agente de Seguridad Turística",
         "Agente de Comunicaciones",
         "Agente de Operaciones",
-    ]
-    for o in agente_ii_opts:
-        choices_rows.append({"list_name": list_agente_ii, "name": slugify_name(o), "label": o})
+    ])
 
     list_subof_i = "suboficial_i_det"
-    subof_i_opts = [
+    add_choice_list(choices_rows, list_subof_i, [
         "Encargado Equipo Operativo Policial",
         "Encargado Equipo de Seguridad Turística",
         "Encargado Equipo de Fronteras",
         "Encargado Equipo de Comunicaciones",
         "Encargado de Programas Preventivos",
         "Encargado Agentes Armeros",
-    ]
-    for o in subof_i_opts:
-        choices_rows.append({"list_name": list_subof_i, "name": slugify_name(o), "label": o})
+    ])
 
     list_subof_ii = "suboficial_ii_det"
-    subof_ii_opts = [
+    add_choice_list(choices_rows, list_subof_ii, [
         "Encargado Subgrupo Operativo Policial",
         "Encargado Subgrupo de Seguridad Turística",
         "Encargado Subgrupo de Fronteras",
         "Oficial de Guardia",
         "Encargado de Operaciones",
-    ]
-    for o in subof_ii_opts:
-        choices_rows.append({"list_name": list_subof_ii, "name": slugify_name(o), "label": o})
+    ])
 
     list_of_i = "oficial_i_det"
-    of_i_opts = [
+    add_choice_list(choices_rows, list_of_i, [
         "Jefe Delegación Distrital",
         "Encargado Grupo Operativo Policial",
+    ])
+
+    # Página 4 - Lista de actividades delictivas (6.1) (select_multiple)
+    list_actividad_delictiva = "actividad_delictiva"
+    actividad_opts = [
+        "Punto de Venta y distribución de Drogas. Búnker (espacio cerrado para la venta y distribución de drogas).",
+        "Delitos contra la vida (Homicidios, heridos, femicidios).",
+        "Venta y consumo de drogas en vía pública.",
+        "Delitos sexuales",
+        "Asalto (a personas, comercio, vivienda, transporte público).",
+        "Daños a la propiedad. (Destruir, inutilizar o desaparecer).",
+        "Estafas (Billetes, documentos, oro, lotería falsos).",
+        "Estafa Informática (computadora, tarjetas, teléfonos, etc.).",
+        "Extorsión (intimidar o amenazar a otras personas con fines de lucro).",
+        "Hurto.",
+        "Receptación (persona que adquiere, recibe u oculta artículos provenientes de un delito en el que no participó).",
+        "Robo a edificaciones.",
+        "Robo a vivienda.",
+        "Robo de ganado y agrícola.",
+        "Robo a comercio",
+        "Robo de vehículos.",
+        "Tacha de vehículos.",
+        "Contrabando (licor, cigarrillos, medicinas, ropa, calzado, etc.)",
+        "Tráfico de personas (coyotaje)",
+        "Otro"
     ]
-    for o in of_i_opts:
-        choices_rows.append({"list_name": list_of_i, "name": slugify_name(o), "label": o})
+    add_choice_list(choices_rows, list_actividad_delictiva, actividad_opts)
 
     # =========================
     # Página 1: Introducción (SIN "Portada")
@@ -249,29 +283,18 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     # =========================
     # Página 2: Consentimiento (ORDENADO)
     # =========================
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p2_consent",
-        "label": "Consentimiento Informado",
-        "appearance": "field-list"
-    })
-
-    # Título
+    survey_rows.append({"type": "begin_group", "name": "p2_consent", "label": "Consentimiento Informado", "appearance": "field-list"})
     survey_rows.append({"type": "note", "name": "p2_titulo", "label": CONSENT_TITLE})
 
-    # Párrafos (separados, con saltos naturales)
     for i, p in enumerate(CONSENT_PARRAFOS, start=1):
         survey_rows.append({"type": "note", "name": f"p2_p_{i}", "label": p})
 
-    # Viñetas (cada una como note para que no se pegue todo en un párrafo gigante)
     for j, b in enumerate(CONSENT_BULLETS, start=1):
         survey_rows.append({"type": "note", "name": f"p2_b_{j}", "label": f"• {b}"})
 
-    # Cierre
     for k, c in enumerate(CONSENT_CIERRE, start=1):
         survey_rows.append({"type": "note", "name": f"p2_c_{k}", "label": c})
 
-    # Pregunta aceptación
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "acepta_participar",
@@ -279,7 +302,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "required": "yes",
         "appearance": "minimal"
     })
-
     survey_rows.append({"type": "end_group", "name": "p2_end"})
 
     # Finalizar si NO acepta
@@ -291,10 +313,13 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     })
 
     # =========================
-    # Página 3: Datos Generales (SOLO si acepta SÍ)
+    # Relevante base: solo si acepta SÍ
     # =========================
     rel_si = f"${{acepta_participar}}='{v_si}'"
 
+    # =========================
+    # Página 3: Datos generales (SOLO si acepta SÍ)
+    # =========================
     survey_rows.append({
         "type": "begin_group",
         "name": "p3_datos_generales",
@@ -303,7 +328,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # 1 Años de servicio (0 a 50)
     survey_rows.append({
         "type": "integer",
         "name": "anos_servicio",
@@ -311,20 +335,17 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "required": "yes",
         "constraint": ". >= 0 and . <= 50",
         "constraint_message": "Debe ser un número entre 0 y 50.",
-        "hint": "Indique únicamente la cantidad de años completos de servicio (en números). Asignar un formato de 0 a 50 años",
         "relevant": rel_si
     })
 
-    # 2 Edad (rangos)
     survey_rows.append({
         "type": f"select_one {list_edad}",
         "name": "edad_rango",
-        "label": "2- Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
+        "label": "2- Edad.",
         "required": "yes",
         "relevant": rel_si
     })
 
-    # 3 Género
     survey_rows.append({
         "type": f"select_one {list_genero}",
         "name": "genero",
@@ -333,7 +354,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # 4 Escolaridad
     survey_rows.append({
         "type": f"select_one {list_escolaridad}",
         "name": "escolaridad",
@@ -342,7 +362,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # 5 Clase policial
     survey_rows.append({
         "type": f"select_one {list_clase}",
         "name": "clase_policial",
@@ -351,7 +370,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # Condicionales según nota (5.1 / 5.2 / 5.3 / 5.4)
     rel_agente_ii = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Agente II')}')"
     rel_subof_i   = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Suboficial I')}')"
     rel_subof_ii  = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Suboficial II')}')"
@@ -390,6 +408,105 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     })
 
     survey_rows.append({"type": "end_group", "name": "p3_end"})
+
+    # =========================
+    # Página 4: Información de interés policial (SOLO si acepta SÍ)
+    # =========================
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p4_interes_policial",
+        "label": P4_INTRO_TITULO,
+        "appearance": "field-list",
+        "relevant": rel_si
+    })
+
+    # Intro visible
+    survey_rows.append({"type": "note", "name": "p4_intro", "label": P4_INTRO_TEXTO, "relevant": rel_si})
+
+    # 6 - Sí/No
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "conocimiento_estructuras",
+        "label": "6- ¿Cuenta usted con conocimiento operativo sobre personas, grupos u organizaciones que desarrollen actividades ilícitas en su jurisdicción?",
+        "required": "yes",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+
+    # Condición: si 6 = Sí, habilitar 6.1–6.4
+    rel_6_si = f"({rel_si}) and (${{conocimiento_estructuras}}='{v_si}')"
+
+    # 6.1 - select_multiple (opción múltiple)
+    survey_rows.append({
+        "type": f"select_multiple {list_actividad_delictiva}",
+        "name": "tipo_actividad_delictiva",
+        "label": "6.1 ¿Qué tipo de actividad delictiva es la que se realiza por parte de estas personas?",
+        "required": "yes",
+        "relevant": rel_6_si
+    })
+
+    # Nota previa confidencial (visible) antes de 6.2–6.4
+    survey_rows.append({
+        "type": "note",
+        "name": "p4_nota_previa_634",
+        "label": NOTA_PREVIA_CONFIDENCIAL,
+        "relevant": rel_6_si
+    })
+
+    # 6.2 - texto corto
+    survey_rows.append({
+        "type": "text",
+        "name": "nombre_estructura_criminal",
+        "label": "6.2 ¿Cuál es el nombre de la estructura criminal?",
+        "required": "yes",
+        "relevant": rel_6_si
+    })
+
+    # (se repite “Nota previa” en el documento; para evitar saturación en Survey123,
+    #  la dejamos una sola vez visible, aplicada a 6.2–6.4)
+    # 6.3 - párrafo
+    survey_rows.append({
+        "type": "text",
+        "name": "quienes_actos_criminales",
+        "label": "6.3- Indique quién o quiénes se dedican a estos actos criminales. (nombres, apellidos, alias, domicilio)",
+        "required": "yes",
+        "appearance": "multiline",
+        "relevant": rel_6_si
+    })
+
+    # 6.4 - párrafo
+    survey_rows.append({
+        "type": "text",
+        "name": "modo_operar_estructura",
+        "label": "6.4 Modo de operar de esta estructura criminal (por ejemplo: venta de droga exprés o en vía pública, asalto a mano armada, modo de desplazamiento, etc.)",
+        "required": "yes",
+        "appearance": "multiline",
+        "relevant": rel_6_si
+    })
+
+    # 7 - texto abierto (no depende de 6)
+    survey_rows.append({
+        "type": "text",
+        "name": "zona_mayor_inseguridad",
+        "label": "7- Indique el lugar, sector o zona que, según su criterio operativo, presenta mayores condiciones de inseguridad dentro de su área de responsabilidad.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": "Respuesta abierta para que la persona encuestada pueda agregar la información adecuada (sector, punto o referencia territorial).",
+        "relevant": rel_si
+    })
+
+    # 8 - texto abierto (no depende de 6)
+    survey_rows.append({
+        "type": "text",
+        "name": "condiciones_riesgo_zona",
+        "label": "8- Describa las principales situaciones o condiciones de riesgo que inciden en la inseguridad de esa zona.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": "Respuesta abierta para describir factores de riesgo percibidos.",
+        "relevant": rel_si
+    })
+
+    survey_rows.append({"type": "end_group", "name": "p4_end"})
 
     # =========================
     # DataFrames
@@ -457,4 +574,3 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
-
