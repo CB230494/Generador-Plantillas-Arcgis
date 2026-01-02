@@ -504,7 +504,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "7- Indique el lugar, sector o zona que, según su criterio operativo, presenta mayores condiciones de inseguridad dentro de su área de responsabilidad.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": "Respuesta abierta para que la persona encuestada pueda agregar la información adecuada (sector, punto o referencia territorial).",
         "relevant": rel_si
     })
 
@@ -514,7 +513,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "8- Describa las principales situaciones o condiciones de riesgo que inciden en la inseguridad de esa zona.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": "Respuesta abierta para describir factores de riesgo percibidos.",
         "relevant": rel_si
     })
 
@@ -538,7 +536,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "9- Desde su experiencia operativa, indique qué recursos considera necesarios para fortalecer la labor policial en su delegación.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": "La respuesta es abierta para que la persona encuestada puedo agregar la información adecuada.",
         "relevant": rel_si
     })
 
@@ -661,7 +658,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "15- Desea, de manera voluntaria, dejar un medio de contacto para brindar más información (correo electrónico, número de teléfono, etc.)",
         "required": False,
         "appearance": "multiline",
-        "hint": HINT_VOLUNTARIA,
         "relevant": rel_si
     })
 
@@ -733,4 +729,5 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
+
 
