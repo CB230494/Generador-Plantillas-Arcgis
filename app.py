@@ -9,16 +9,16 @@
 # - Página 4: Información de interés policial (según imágenes)
 #            + 6 (Sí/No) y si "Sí" se habilitan 6.1 a 6.4
 #            + 7 y 8 (abiertas)
-#            + Notas: se incluyen como hint cuando son de respuesta / o como note cuando aplica
 # - Página 5: Información de interés interno (según imágenes)
 #            + Condicionales: 10.1 si 10="No"; 11.1 si 11="Sí"; 12.1 si 12 in ("Poco","Nada")
 #                             13.1 si 13="Sí"; 14.1 si 14="Sí"
 #            + 15 opcional (contacto voluntario)
-# - NUEVO: Glosarios por página (acceso opcional al final de la página)
-#          * Página 4: Glosario — términos del glosario identificados en esa página
-#          * Página 5: Glosario — términos del glosario identificados en esa página
-#          (La pregunta para acceder NO es obligatoria; si marca Sí, aparece la página Glosario;
-#           puede volver con "Anterior" para seguir donde estaba.)
+# - NUEVO: Glosarios por sección (acceso opcional, sin obligar a responder)
+#          * Al final de Página 4 se pregunta si desea ver glosario; si "Sí" aparece grupo glosario.
+#          * Al final de Página 5 se pregunta si desea ver glosario; si "Sí" aparece grupo glosario.
+#          * IMPORTANTE: En el glosario SOLO se permite devolver (Atrás). Para evitar "Siguiente",
+#            el último elemento del glosario es un END condicional que aparece SOLO dentro del glosario.
+#            Así el usuario no puede avanzar desde el glosario hacia el resto de la encuesta.
 # - Exporta XLSForm (Excel) con hojas: survey / choices / settings
 # ==========================================================================================
 
@@ -76,7 +76,7 @@ def descargar_xlsform(df_survey, df_choices, df_settings, nombre_archivo: str):
             ws.freeze_panes(1, 0)
             ws.set_row(0, None, fmt_hdr)
             for col_idx, col_name in enumerate(df.columns):
-                ws.set_column(col_idx, col_idx, max(14, min(90, len(str(col_name)) + 10)))
+                ws.set_column(col_idx, col_idx, max(14, min(110, len(str(col_name)) + 10)))
 
     buffer.seek(0)
     st.download_button(
@@ -187,40 +187,110 @@ HINT_ANALISIS_PREVENTIVO = (
     "Esta información será utilizada exclusivamente para análisis preventivo institucional "
     "y no sustituye los mecanismos formales de denuncia."
 )
-HINT_VOLUNTARIA = "Respuesta abierta. Información voluntaria."
-HINT_CONFIDENCIAL = "Respuesta abierta. Información de carácter confidencial."
 
 # ==========================================================================================
-# Glosarios (términos identificados por página)
+# Glosarios (TEXTOS COMPLETOS, SIN ACORTAR)
 # ==========================================================================================
 GLOS_P4_ITEMS = [
-    ("Bunker (eje de expendio de drogas)", "tipo de construcción destinada a servir de refugio a consumidores de droga y a su vez es un expendio de drogas y armas."),
-    ("Extorsión", "el que para procurar un lucro injusto obligare a otro con int...ción patrimonial perjudicial para sí mismo o para un tercero."),
-    ("Hurto", "quien se apoderare ilegítimamente de una cosa mueble, total o parcialmente ajena, esto en aprovechamiento del descuido"),
-    ("Receptación", "quien adquiriere, recibiera y ocultare dinero, cosas o bienes...ipo o interviniere en su adquisición, recepción u ocultación."),
-    ("Contrabando", "quien introduzca o extraiga, transporte, almacene, adquiera, ...ocedencia introducida al país, eludiendo el control aduanero."),
-    ("Delitos sexuales", "atentar contra la libre elección sexual, contra su pudor, dent...n los delitos de violación, abusos deshonestos y acoso sexual."),
-    ("Daños/vandalismo", "quien destruyere, inutilizare, hiciere desaparecer, o de cualq...maniales (bienes del estado), contra persona física o jurídica"),
-    ("Estafa o defraudación", "quien induciendo a error a otra persona o manteniéndola en él...rídico para sí o para un tercero, lesione el patrimonio ajeno"),
-    ("Fraude informático", "persona que, con la intención de procurar u obtener un benefi...tra acción que incida en el proceso de los datos del sistema."),
-    ("Alteración de datos y sabotaje informático", "quien por cualquier medio accede, borre, suprima, modifique o...ice sin autorización los datos registrados en una computadora"),
-    ("Tráfico ilegal de personas", "conducir o transportar a personas para su ingreso al país o s...anjeras que ingresen al país o permanezcan ilegalmente en él."),
-    ("Robo a edificación (tacha)", "quien mediante el desprendimiento, ruptura, destrucción o forz...trare en una edificación, o en sus dependencias, o en un local."),
-    ("Robo a vivienda (tacha)", "quien mediante el desprendimiento, ruptura, destrucción o forz... y sustrajere alguna cosa mueble total o parcialmente ajena."),
-    ("Robo a vivienda (intimidación)", "quien en una vivienda ajena ejecutare el apoderamiento de una ...uridad propia o de terceros, en el lugar del hecho o después."),
-    ("Robo a comercio (tacha)", "quien mediante desprendimiento, ruptura, destrucción o forzami... y sustrajere alguna cosa mueble total o parcialmente ajena."),
-    ("Robo a comercio (intimidación)", "apoderamiento de cosa mueble total o parcialmente ajena, media...ón sobre las personas, sea para cometer el robo o para huir."),
-    ("Robo de vehículos", "apoderamiento o sustracción de un vehículo automotor de forma ilegítima con el fin de obtener un beneficio propio."),
-    ("Robo a vehículos (tacha)", "quien mediante la apertura sin autorización de un vehículo o d... total o parcialmente ajena que se encuentre en el interior."),
-    ("Robo de motocicletas/vehículos(bajonazo)", "apoderamiento de un vehículo o motocicleta por medio de violencia o intimidación a la víctima.")
+    (
+        "Bunker (eje de expendio de drogas)",
+        "tipo de construcción destinada a servir de refugio a consumidores de droga y a su vez es un expendio de drogas y armas."
+    ),
+    (
+        "Extorsión",
+        "el que para procurar un lucro injusto obligare a otro con intimidación o amenaza a realizar u omitir un acto o negocio jurídico con intención patrimonial perjudicial para sí mismo o para un tercero."
+    ),
+    (
+        "Hurto",
+        "quien se apoderare ilegítimamente de una cosa mueble, total o parcialmente ajena, esto en aprovechamiento del descuido."
+    ),
+    (
+        "Receptación",
+        "quien adquiriere, recibiera y ocultare dinero, cosas o bienes provenientes de un delito o interviniere en su adquisición, recepción u ocultación."
+    ),
+    (
+        "Contrabando",
+        "quien introduzca o extraiga, transporte, almacene, adquiera, venda o tenga en su poder mercadería de procedencia introducida al país, eludiendo el control aduanero."
+    ),
+    (
+        "Delitos sexuales",
+        "atentar contra la libre elección sexual, contra su pudor, dentro de estos se incluyen los delitos de violación, abusos deshonestos y acoso sexual."
+    ),
+    (
+        "Daños/vandalismo",
+        "quien destruyere, inutilizare, hiciere desaparecer, o de cualquier modo dañare cosas o bienes, incluyendo bienes del Estado, contra persona física o jurídica."
+    ),
+    (
+        "Estafa o defraudación",
+        "quien induciendo a error a otra persona o manteniéndola en él, mediante ardid o engaño, para sí o para un tercero, lesione el patrimonio ajeno."
+    ),
+    (
+        "Fraude informático",
+        "persona que, con la intención de procurar u obtener un beneficio para sí o para un tercero, influya en el resultado de un procesamiento de datos mediante la manipulación de datos, la alteración de programas o cualquier otra acción que incida en el proceso de los datos del sistema."
+    ),
+    (
+        "Alteración de datos y sabotaje informático",
+        "quien por cualquier medio accede, borre, suprima, modifique o inutilice sin autorización los datos registrados en una computadora, sistema o soporte informático, afectando su integridad, disponibilidad o funcionamiento."
+    ),
+    (
+        "Tráfico ilegal de personas",
+        "conducir o transportar a personas para su ingreso al país o salida del mismo por lugares no autorizados, o facilitar el ingreso o permanencia ilegal de personas extranjeras que ingresen al país o permanezcan ilegalmente en él."
+    ),
+    (
+        "Robo a edificación (tacha)",
+        "quien mediante el desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en una edificación, o en sus dependencias, o en un local, y sustrajere alguna cosa mueble total o parcialmente ajena."
+    ),
+    (
+        "Robo a vivienda (tacha)",
+        "quien mediante el desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en una vivienda o sus dependencias y sustrajere alguna cosa mueble total o parcialmente ajena."
+    ),
+    (
+        "Robo a vivienda (intimidación)",
+        "quien en una vivienda ajena ejecutare el apoderamiento de una cosa mueble total o parcialmente ajena mediante violencia o intimidación sobre las personas, sea para cometer el robo o para conservar su seguridad propia o de terceros, en el lugar del hecho o después."
+    ),
+    (
+        "Robo a comercio (tacha)",
+        "quien mediante desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en un local comercial o sus dependencias y sustrajere alguna cosa mueble total o parcialmente ajena."
+    ),
+    (
+        "Robo a comercio (intimidación)",
+        "apoderamiento de cosa mueble total o parcialmente ajena, mediante violencia o intimidación sobre las personas, sea para cometer el robo o para huir."
+    ),
+    (
+        "Robo de vehículos",
+        "apoderamiento o sustracción de un vehículo automotor de forma ilegítima con el fin de obtener un beneficio propio."
+    ),
+    (
+        "Robo a vehículos (tacha)",
+        "quien mediante la apertura sin autorización de un vehículo o destruyendo o forzando sus mecanismos de acceso, sustrajere alguna cosa mueble total o parcialmente ajena que se encuentre en el interior."
+    ),
+    (
+        "Robo de motocicletas/vehículos (bajonazo)",
+        "apoderamiento de un vehículo o motocicleta por medio de violencia o intimidación a la víctima."
+    )
 ]
 
 GLOS_P5_ITEMS = [
-    ("Falta de capacitación policial", "deficiencia en la capacitación, doctrina policial, actualización jurídica, polígono y procedimientos policiales."),
-    ("Corrupción policial", "consiste en el uso indebido de sus atribuciones, recursos o i...o avances en la carrera profesional e incluso fines políticos"),
-    ("Inadecuado uso del recurso policial", "deficiente uso de los recursos que se tienen en una delegación policial para un eficiente servicio."),
-    ("Inefectividad en el servicio de policía", "baja respuesta por parte de fuerza pública ante cualquier incidencia, derivado de muchos factores que son relevantes."),
-    ("Necesidades básicas insatisfechas", "carencias críticas en las personas para vivir de forma adecua...ación básica, ingreso mínimo, servicios públicos esenciales).")
+    (
+        "Falta de capacitación policial",
+        "deficiencia en la capacitación, doctrina policial, actualización jurídica, polígono y procedimientos policiales."
+    ),
+    (
+        "Corrupción policial",
+        "consiste en el uso indebido de sus atribuciones, recursos o influencias, para beneficio propio o de terceros, incluyendo ascensos, sanciones evitadas, ventajas económicas o avances en la carrera profesional e incluso fines políticos."
+    ),
+    (
+        "Inadecuado uso del recurso policial",
+        "deficiente uso de los recursos que se tienen en una delegación policial para un eficiente servicio."
+    ),
+    (
+        "Inefectividad en el servicio de policía",
+        "baja respuesta por parte de fuerza pública ante cualquier incidencia, derivado de muchos factores que son relevantes."
+    ),
+    (
+        "Necesidades básicas insatisfechas",
+        "carencias críticas en las personas para vivir de forma adecuada, como alimentación, vivienda, educación básica, ingreso mínimo, servicios públicos esenciales."
+    )
 ]
 
 # ==========================================================================================
@@ -575,12 +645,14 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "appearance": "field-list",
         "relevant": rel_glos_p4
     })
+
     survey_rows.append({
         "type": "note",
         "name": "p4_5_glosario_info",
-        "label": "Si desea volver a la sección anterior, utilice el botón “Anterior”.",
+        "label": "Para volver a la sección anterior, utilice el botón “Anterior”.",
         "relevant": rel_glos_p4
     })
+
     for i, (term, defin) in enumerate(GLOS_P4_ITEMS, start=1):
         survey_rows.append({
             "type": "note",
@@ -588,10 +660,19 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
             "label": f"{term}: {defin}",
             "relevant": rel_glos_p4
         })
+
+    # END SOLO en glosario: evita que el usuario avance desde glosario
+    survey_rows.append({
+        "type": "end",
+        "name": "fin_en_glosario_p4",
+        "label": "Fin del glosario. Use “Anterior” para regresar a la sección anterior y continuar con la encuesta.",
+        "relevant": rel_glos_p4
+    })
+
     survey_rows.append({"type": "end_group", "name": "p4_5_end"})
 
     # =========================
-    # Página 5: Interés interno (NUEVA)
+    # Página 5: Interés interno
     # =========================
     survey_rows.append({
         "type": "begin_group",
@@ -750,12 +831,14 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "appearance": "field-list",
         "relevant": rel_glos_p5
     })
+
     survey_rows.append({
         "type": "note",
         "name": "p5_5_glosario_info",
-        "label": "Si desea volver a la sección anterior, utilice el botón “Anterior”.",
+        "label": "Para volver a la sección anterior, utilice el botón “Anterior”.",
         "relevant": rel_glos_p5
     })
+
     for i, (term, defin) in enumerate(GLOS_P5_ITEMS, start=1):
         survey_rows.append({
             "type": "note",
@@ -763,6 +846,15 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
             "label": f"{term}: {defin}",
             "relevant": rel_glos_p5
         })
+
+    # END SOLO en glosario: evita que el usuario avance desde glosario
+    survey_rows.append({
+        "type": "end",
+        "name": "fin_en_glosario_p5",
+        "label": "Fin del glosario. Use “Anterior” para regresar a la sección anterior y continuar con la encuesta.",
+        "relevant": rel_glos_p5
+    })
+
     survey_rows.append({"type": "end_group", "name": "p5_5_end"})
 
     # =========================
