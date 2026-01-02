@@ -359,14 +359,13 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "required": "yes",
         "constraint": ". >= 0 and . <= 50",
         "constraint_message": "Debe ser un número entre 0 y 50.",
-        "hint": "Indique únicamente la cantidad de años completos de servicio (en números). Asignar un formato de 0 a 50 años",
         "relevant": rel_si
     })
 
     survey_rows.append({
         "type": f"select_one {list_edad}",
         "name": "edad_rango",
-        "label": "2- Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
+        "label": "2- Edad.",
         "required": "yes",
         "relevant": rel_si
     })
@@ -734,3 +733,4 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
+
