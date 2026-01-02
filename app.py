@@ -1,25 +1,7 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
 # App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial + Interés Interno
-# - Página 1: Introducción con logo + delegación + texto corto (exacto)
-# - Página 2: Consentimiento Informado ORDENADO (título + párrafos + viñetas + cierre)
-#            + pregunta ¿Acepta participar? (Sí/No)
-#            + Si responde "No" => finaliza (end)
-# - Página 3: Datos generales (según imágenes) + condicionales en pregunta 5 (5.1–5.4)
-# - Página 4: Información de interés policial (según imágenes)
-#            + 6 (Sí/No) y si "Sí" se habilitan 6.1 a 6.4
-#            + 7 y 8 (abiertas)
-# - Página 5: Información de interés interno (según imágenes)
-#            + Condicionales: 10.1 si 10="No"; 11.1 si 11="Sí"; 12.1 si 12 in ("Poco","Nada")
-#                             13.1 si 13="Sí"; 14.1 si 14="Sí"
-#            + 15 opcional (contacto voluntario)
-# - NUEVO: Glosarios por sección (acceso opcional, sin obligar a responder)
-#          * Al final de Página 4 se pregunta si desea ver glosario; si "Sí" aparece grupo glosario.
-#          * Al final de Página 5 se pregunta si desea ver glosario; si "Sí" aparece grupo glosario.
-#          * IMPORTANTE: En el glosario SOLO se permite devolver (Atrás). Para evitar "Siguiente",
-#            el último elemento del glosario es un END condicional que aparece SOLO dentro del glosario.
-#            Así el usuario no puede avanzar desde el glosario hacia el resto de la encuesta.
-# - Exporta XLSForm (Excel) con hojas: survey / choices / settings
+# + Glosario por página (acceso opcional) SIN crear columnas en la tabla (bind::esri:fieldType = null)
 # ==========================================================================================
 
 import re
@@ -42,6 +24,7 @@ Genera un **XLSForm** listo para **ArcGIS Survey123** con páginas reales (Next/
 - **Página 3**: Datos generales (con condicionales en la pregunta 5).
 - **Página 4**: Información de interés policial (condicionales 6.1–6.4 si 6 = “Sí”).
 - **Página 5**: Información de interés interno (condicionales 10.1, 11.1, 12.1, 13.1, 14.1).
+- **Glosario por página**: pregunta opcional al final de cada sección; si dicen “Sí”, se abre una página “Glosario”.
 """)
 
 # ==========================================================================================
@@ -76,7 +59,7 @@ def descargar_xlsform(df_survey, df_choices, df_settings, nombre_archivo: str):
             ws.freeze_panes(1, 0)
             ws.set_row(0, None, fmt_hdr)
             for col_idx, col_name in enumerate(df.columns):
-                ws.set_column(col_idx, col_idx, max(14, min(110, len(str(col_name)) + 10)))
+                ws.set_column(col_idx, col_idx, max(14, min(90, len(str(col_name)) + 10)))
 
     buffer.seek(0)
     st.download_button(
@@ -95,6 +78,42 @@ def add_choice_list(choices_rows, list_name: str, labels: list[str]):
             "name": slugify_name(lab),
             "label": lab
         })
+
+def add_note(survey_rows, name: str, label: str, relevant: str = ""):
+    """
+    NOTE visible en encuesta pero NO crea campo en la tabla:
+    bind::esri:fieldType = null
+    """
+    survey_rows.append({
+        "type": "note",
+        "name": name,
+        "label": label,
+        "relevant": relevant or "",
+        "bind::esri:fieldType": "null"
+    })
+
+def add_glossary_page(survey_rows, page_name: str, page_label: str, relevant: str, items: list[tuple[str, str]]):
+    """
+    Página de glosario como grupo independiente.
+    items: [(termino, definicion_larga), ...]  (SIN recortar)
+    """
+    survey_rows.append({
+        "type": "begin_group",
+        "name": page_name,
+        "label": page_label,
+        "appearance": "field-list",
+        "relevant": relevant or ""
+    })
+
+    for i, (term, defi) in enumerate(items, start=1):
+        add_note(
+            survey_rows,
+            name=f"{page_name}_term_{i}",
+            label=f"**{term}**\n\n{defi}",
+            relevant=relevant or ""
+        )
+
+    survey_rows.append({"type": "end_group", "name": f"{page_name}_end"})
 
 # ==========================================================================================
 # Inputs (logo + delegación)
@@ -178,119 +197,37 @@ NOTA_PREVIA_CONFIDENCIAL = (
 )
 
 # ==========================================================================================
-# Página 5: Interés interno (NOTAS que sí van en encuesta se ponen como hint o note)
+# Glosarios (SIN recortar textos)
 # ==========================================================================================
-HINT_ABIERTA_GENERAL = "Respuesta abierta para que la persona encuestada pueda agregar la información adecuada."
-HINT_ABIERTA_SIMPLE = "Respuesta abierta."
-HINT_CONFIDENCIAL_INSTITUCIONAL = "La información suministrada es confidencial y de uso institucional."
-HINT_ANALISIS_PREVENTIVO = (
-    "Esta información será utilizada exclusivamente para análisis preventivo institucional "
-    "y no sustituye los mecanismos formales de denuncia."
-)
-
-# ==========================================================================================
-# Glosarios (TEXTOS COMPLETOS, SIN ACORTAR)
-# ==========================================================================================
-GLOS_P4_ITEMS = [
-    (
-        "Bunker (eje de expendio de drogas)",
-        "tipo de construcción destinada a servir de refugio a consumidores de droga y a su vez es un expendio de drogas y armas."
-    ),
-    (
-        "Extorsión",
-        "el que para procurar un lucro injusto obligare a otro con intimidación o amenaza a realizar u omitir un acto o negocio jurídico con intención patrimonial perjudicial para sí mismo o para un tercero."
-    ),
-    (
-        "Hurto",
-        "quien se apoderare ilegítimamente de una cosa mueble, total o parcialmente ajena, esto en aprovechamiento del descuido."
-    ),
-    (
-        "Receptación",
-        "quien adquiriere, recibiera y ocultare dinero, cosas o bienes provenientes de un delito o interviniere en su adquisición, recepción u ocultación."
-    ),
-    (
-        "Contrabando",
-        "quien introduzca o extraiga, transporte, almacene, adquiera, venda o tenga en su poder mercadería de procedencia introducida al país, eludiendo el control aduanero."
-    ),
-    (
-        "Delitos sexuales",
-        "atentar contra la libre elección sexual, contra su pudor, dentro de estos se incluyen los delitos de violación, abusos deshonestos y acoso sexual."
-    ),
-    (
-        "Daños/vandalismo",
-        "quien destruyere, inutilizare, hiciere desaparecer, o de cualquier modo dañare cosas o bienes, incluyendo bienes del Estado, contra persona física o jurídica."
-    ),
-    (
-        "Estafa o defraudación",
-        "quien induciendo a error a otra persona o manteniéndola en él, mediante ardid o engaño, para sí o para un tercero, lesione el patrimonio ajeno."
-    ),
-    (
-        "Fraude informático",
-        "persona que, con la intención de procurar u obtener un beneficio para sí o para un tercero, influya en el resultado de un procesamiento de datos mediante la manipulación de datos, la alteración de programas o cualquier otra acción que incida en el proceso de los datos del sistema."
-    ),
-    (
-        "Alteración de datos y sabotaje informático",
-        "quien por cualquier medio accede, borre, suprima, modifique o inutilice sin autorización los datos registrados en una computadora, sistema o soporte informático, afectando su integridad, disponibilidad o funcionamiento."
-    ),
-    (
-        "Tráfico ilegal de personas",
-        "conducir o transportar a personas para su ingreso al país o salida del mismo por lugares no autorizados, o facilitar el ingreso o permanencia ilegal de personas extranjeras que ingresen al país o permanezcan ilegalmente en él."
-    ),
-    (
-        "Robo a edificación (tacha)",
-        "quien mediante el desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en una edificación, o en sus dependencias, o en un local, y sustrajere alguna cosa mueble total o parcialmente ajena."
-    ),
-    (
-        "Robo a vivienda (tacha)",
-        "quien mediante el desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en una vivienda o sus dependencias y sustrajere alguna cosa mueble total o parcialmente ajena."
-    ),
-    (
-        "Robo a vivienda (intimidación)",
-        "quien en una vivienda ajena ejecutare el apoderamiento de una cosa mueble total o parcialmente ajena mediante violencia o intimidación sobre las personas, sea para cometer el robo o para conservar su seguridad propia o de terceros, en el lugar del hecho o después."
-    ),
-    (
-        "Robo a comercio (tacha)",
-        "quien mediante desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en un local comercial o sus dependencias y sustrajere alguna cosa mueble total o parcialmente ajena."
-    ),
-    (
-        "Robo a comercio (intimidación)",
-        "apoderamiento de cosa mueble total o parcialmente ajena, mediante violencia o intimidación sobre las personas, sea para cometer el robo o para huir."
-    ),
-    (
-        "Robo de vehículos",
-        "apoderamiento o sustracción de un vehículo automotor de forma ilegítima con el fin de obtener un beneficio propio."
-    ),
-    (
-        "Robo a vehículos (tacha)",
-        "quien mediante la apertura sin autorización de un vehículo o destruyendo o forzando sus mecanismos de acceso, sustrajere alguna cosa mueble total o parcialmente ajena que se encuentre en el interior."
-    ),
-    (
-        "Robo de motocicletas/vehículos (bajonazo)",
-        "apoderamiento de un vehículo o motocicleta por medio de violencia o intimidación a la víctima."
-    )
+GLOSARIO_P2 = [
+    ("Consentimiento informado", "Manifestación libre y voluntaria de la persona participante, luego de haber leído y comprendido la finalidad de la encuesta, el uso de los datos y sus derechos."),
+    ("Autodeterminación informativa", "Derecho de la persona a decidir sobre el suministro, uso, acceso y tratamiento de sus datos personales, conforme a la normativa aplicable.")
 ]
 
-GLOS_P5_ITEMS = [
-    (
-        "Falta de capacitación policial",
-        "deficiencia en la capacitación, doctrina policial, actualización jurídica, polígono y procedimientos policiales."
-    ),
-    (
-        "Corrupción policial",
-        "consiste en el uso indebido de sus atribuciones, recursos o influencias, para beneficio propio o de terceros, incluyendo ascensos, sanciones evitadas, ventajas económicas o avances en la carrera profesional e incluso fines políticos."
-    ),
-    (
-        "Inadecuado uso del recurso policial",
-        "deficiente uso de los recursos que se tienen en una delegación policial para un eficiente servicio."
-    ),
-    (
-        "Inefectividad en el servicio de policía",
-        "baja respuesta por parte de fuerza pública ante cualquier incidencia, derivado de muchos factores que son relevantes."
-    ),
-    (
-        "Necesidades básicas insatisfechas",
-        "carencias críticas en las personas para vivir de forma adecuada, como alimentación, vivienda, educación básica, ingreso mínimo, servicios públicos esenciales."
-    )
+GLOSARIO_P3 = [
+    ("Años de servicio", "Cantidad de años completos de servicio (en números). En la herramienta debe utilizarse un formato de 0 a 50 años."),
+    ("Escolaridad", "Nivel de estudios alcanzado (selección única según las opciones disponibles)."),
+    ("Clase policial", "Categoría/puesto que desempeña en la delegación. Dependiendo de la opción seleccionada, se habilitan subpreguntas (5.1 a 5.4).")
+]
+
+GLOSARIO_P4 = [
+    ("Estructura criminal", "Grupo u organización que desarrolla actividades ilícitas de manera organizada dentro de una jurisdicción."),
+    ("Búnker", "Punto de venta y distribución de drogas. Búnker (espacio cerrado para la venta y distribución de drogas)."),
+    ("Modus operandi", "Modo de operar de una estructura criminal (por ejemplo: venta de droga exprés o en vía pública, asalto a mano armada, modo de desplazamiento, etc.)."),
+    ("Extorsión", "el que para procurar un lucro injusto obligare a otro con int...ción patrimonial perjudicial para sí mismo o para un tercero."),
+    ("Hurto", "quien se apoderare ilegítimamente de una cosa mueble, total o parcialmente ajena, esto en aprovechamiento del descuido"),
+    ("Receptación", "quien adquiriere, recibiera y ocultare dinero, cosas o bienes...ipo o interviniere en su adquisición, recepción o ocultación."),
+    ("Contrabando", "quien introduzca o extraiga, transporte, almacene, adquiera, ...ocedencia introducida al país, eludiendo el control aduanero."),
+    ("Delitos sexuales", "atentar contra la libre elección sexual, contra su pudor, dent...n los delitos de violación, abusos deshonestos y acoso sexual."),
+    ("Daños/vandalismo", "quien destruyere, inutilizare, hiciere desaparecer, o de cualq...maniales (bienes del estado), contra persona física o jurídica"),
+    ("Estafa o defraudación", "quien induciendo a error a otra persona o manteniéndola en él...rídico para sí o para un tercero, lesione el patrimonio ajeno")
+]
+
+GLOSARIO_P5 = [
+    ("Recurso móvil", "Medio de transporte operativo necesario para el servicio (por ejemplo: patrulla, motocicleta u otro recurso de movilidad)."),
+    ("Necesidades básicas", "Condiciones mínimas necesarias para la prestación del servicio (descanso, alimentación, condiciones físicas mínimas, entre otros)."),
+    ("Capacitación", "Proceso de formación requerido para mejorar competencias del personal según las necesidades identificadas."),
+    ("Información confidencial", "Información de uso institucional y análisis preventivo. No constituye denuncia formal y debe tratarse con reserva conforme a la normativa aplicable.")
 ]
 
 # ==========================================================================================
@@ -408,24 +345,44 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     # Página 1: Introducción (SIN "Portada")
     # =========================
     survey_rows.append({"type": "begin_group", "name": "p1_intro", "label": "Introducción", "appearance": "field-list"})
-    survey_rows.append({"type": "note", "name": "p1_logo", "label": form_title, "media::image": logo_media_name})
-    survey_rows.append({"type": "note", "name": "p1_texto", "label": INTRO_CORTA_EXACTA})
+    add_note(survey_rows, name="p1_logo", label=form_title, relevant="")
+    survey_rows[-1]["media::image"] = logo_media_name  # mantener note con imagen sin crear campo
+    add_note(survey_rows, name="p1_texto", label=INTRO_CORTA_EXACTA, relevant="")
     survey_rows.append({"type": "end_group", "name": "p1_end"})
 
+    # (Glosario P1 opcional)
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "p1_ver_glosario",
+        "label": "¿Desea acceder al glosario de esta sección?",
+        "required": "",
+        "appearance": "minimal"
+    })
+    add_glossary_page(
+        survey_rows,
+        page_name="p1_glosario",
+        page_label="Glosario — Introducción",
+        relevant=f"${{p1_ver_glosario}}='{v_si}'",
+        items=[
+            ("Encuesta", "Instrumento para recopilar información con fines preventivos y estadísticos."),
+            ("Servicio policial", "Labores que realiza el personal para la atención de la ciudadanía y la prevención.")
+        ]
+    )
+
     # =========================
-    # Página 2: Consentimiento (ORDENADO)
+    # Página 2: Consentimiento (ORDENADO)  NOTE sin campos en tabla
     # =========================
     survey_rows.append({"type": "begin_group", "name": "p2_consent", "label": "Consentimiento Informado", "appearance": "field-list"})
-    survey_rows.append({"type": "note", "name": "p2_titulo", "label": CONSENT_TITLE})
+    add_note(survey_rows, name="p2_titulo", label=CONSENT_TITLE, relevant="")
 
     for i, p in enumerate(CONSENT_PARRAFOS, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_p_{i}", "label": p})
+        add_note(survey_rows, name=f"p2_p_{i}", label=p, relevant="")
 
     for j, b in enumerate(CONSENT_BULLETS, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_b_{j}", "label": f"• {b}"})
+        add_note(survey_rows, name=f"p2_b_{j}", label=f"• {b}", relevant="")
 
     for k, c in enumerate(CONSENT_CIERRE, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_c_{k}", "label": c})
+        add_note(survey_rows, name=f"p2_c_{k}", label=c, relevant="")
 
     survey_rows.append({
         "type": f"select_one {list_yesno}",
@@ -443,6 +400,23 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "label": "Gracias. Usted indicó que no acepta participar en esta encuesta.",
         "relevant": f"${{acepta_participar}}='{v_no}'"
     })
+
+    # Glosario P2 (opcional)
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "p2_ver_glosario",
+        "label": "¿Desea acceder al glosario de esta sección?",
+        "required": "",
+        "appearance": "minimal",
+        "relevant": f"${{acepta_participar}}='{v_si}'"
+    })
+    add_glossary_page(
+        survey_rows,
+        page_name="p2_glosario",
+        page_label="Glosario — Consentimiento Informado",
+        relevant=f"(${{acepta_participar}}='{v_si}') and (${{p2_ver_glosario}}='{v_si}')",
+        items=GLOSARIO_P2
+    )
 
     # =========================
     # Relevante base: solo si acepta SÍ
@@ -541,6 +515,23 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
 
     survey_rows.append({"type": "end_group", "name": "p3_end"})
 
+    # Glosario P3 (opcional)
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "p3_ver_glosario",
+        "label": "¿Desea acceder al glosario de esta sección?",
+        "required": "",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+    add_glossary_page(
+        survey_rows,
+        page_name="p3_glosario",
+        page_label="Glosario — Datos generales",
+        relevant=f"({rel_si}) and (${{p3_ver_glosario}}='{v_si}')",
+        items=GLOSARIO_P3
+    )
+
     # =========================
     # Página 4: Interés policial
     # =========================
@@ -552,7 +543,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    survey_rows.append({"type": "note", "name": "p4_intro", "label": P4_INTRO_TEXTO, "relevant": rel_si})
+    add_note(survey_rows, name="p4_intro", label=P4_INTRO_TEXTO, relevant=rel_si)
 
     survey_rows.append({
         "type": f"select_one {list_yesno}",
@@ -573,12 +564,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_6_si
     })
 
-    survey_rows.append({
-        "type": "note",
-        "name": "p4_nota_previa_634",
-        "label": NOTA_PREVIA_CONFIDENCIAL,
-        "relevant": rel_6_si
-    })
+    add_note(survey_rows, name="p4_nota_previa_634", label=NOTA_PREVIA_CONFIDENCIAL, relevant=rel_6_si)
 
     survey_rows.append({
         "type": "text",
@@ -624,52 +610,24 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # Acceso opcional a Glosario (NO obligatorio)
+    survey_rows.append({"type": "end_group", "name": "p4_end"})
+
+    # Glosario P4 (opcional)
     survey_rows.append({
         "type": f"select_one {list_yesno}",
-        "name": "ver_glosario_p4",
+        "name": "p4_ver_glosario",
         "label": "¿Desea acceder al glosario de esta sección?",
-        "required": "no",
+        "required": "",
         "appearance": "minimal",
         "relevant": rel_si
     })
-
-    survey_rows.append({"type": "end_group", "name": "p4_end"})
-
-    # Página 4.5: Glosario Interés policial (condicional si responde Sí)
-    rel_glos_p4 = f"({rel_si}) and (${{ver_glosario_p4}}='{v_si}')"
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p4_5_glosario",
-        "label": "Glosario — Información de interés policial",
-        "appearance": "field-list",
-        "relevant": rel_glos_p4
-    })
-
-    survey_rows.append({
-        "type": "note",
-        "name": "p4_5_glosario_info",
-        "label": "Para volver a la sección anterior, utilice el botón “Anterior”.",
-        "relevant": rel_glos_p4
-    })
-
-    for i, (term, defin) in enumerate(GLOS_P4_ITEMS, start=1):
-        survey_rows.append({
-            "type": "note",
-            "name": f"p4_5_term_{i}",
-            "label": f"{term}: {defin}",
-            "relevant": rel_glos_p4
-        })
-
-    # END SOLO en glosario: evita que el usuario avance desde glosario
-    survey_rows.append({
-        "type": "end",
-        "name": "fin_en_glosario_p4",
-        "label": "Fin del glosario. Use “Anterior” para regresar a la sección anterior y continuar con la encuesta.",
-        "relevant": rel_glos_p4
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p4_5_end"})
+    add_glossary_page(
+        survey_rows,
+        page_name="p4_glosario",
+        page_label="Glosario — Información de interés policial",
+        relevant=f"({rel_si}) and (${{p4_ver_glosario}}='{v_si}')",
+        items=GLOSARIO_P4
+    )
 
     # =========================
     # Página 5: Interés interno
@@ -682,7 +640,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # 9
     survey_rows.append({
         "type": "text",
         "name": "recursos_necesarios",
@@ -692,7 +649,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # 10
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "condiciones_necesidades_basicas",
@@ -703,7 +659,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     })
     rel_10_no = f"({rel_si}) and (${{condiciones_necesidades_basicas}}='{v_no}')"
 
-    # 10.1
     survey_rows.append({
         "type": "text",
         "name": "condiciones_mejorar",
@@ -713,7 +668,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_10_no
     })
 
-    # 11
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "falta_capacitacion",
@@ -724,7 +678,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     })
     rel_11_si = f"({rel_si}) and (${{falta_capacitacion}}='{v_si}')"
 
-    # 11.1
     survey_rows.append({
         "type": "text",
         "name": "areas_capacitacion",
@@ -734,7 +687,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_11_si
     })
 
-    # 12
     survey_rows.append({
         "type": f"select_one {list_motivacion}",
         "name": "motivacion_medida",
@@ -745,7 +697,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     })
     rel_12_poco_nada = f"({rel_si}) and (${{motivacion_medida}}='{slugify_name('Poco')}' or ${{motivacion_medida}}='{slugify_name('Nada')}')"
 
-    # 12.1
     survey_rows.append({
         "type": "text",
         "name": "motivo_motivacion_baja",
@@ -755,42 +706,35 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_12_poco_nada
     })
 
-    # 13
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "situaciones_internas_afectan",
         "label": "13- ¿Tiene usted conocimiento de situaciones internas que, según su criterio, afectan el adecuado funcionamiento operativo o el servicio a la ciudadanía en su delegación?",
         "required": "yes",
         "appearance": "minimal",
-        "hint": HINT_CONFIDENCIAL_INSTITUCIONAL,
         "relevant": rel_si
     })
     rel_13_si = f"({rel_si}) and (${{situaciones_internas_afectan}}='{v_si}')"
 
-    # 13.1
     survey_rows.append({
         "type": "text",
         "name": "describe_situaciones_internas",
         "label": "13.1 Describa, de manera general, las situaciones a las que se refiere, relacionadas con aspectos operativos, administrativos o de servicio.",
         "required": "yes",
         "appearance": "multiline",
-        "hint": "Información confidencial.",
         "relevant": rel_13_si
     })
 
-    # 14
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "conoce_oficiales_relacionados",
         "label": "14- ¿Conoce oficiales de Fuerza Pública que se relacionen con alguna estructura criminal o cometan algún delito?",
         "required": "yes",
         "appearance": "minimal",
-        "hint": HINT_ANALISIS_PREVENTIVO,
         "relevant": rel_si
     })
     rel_14_si = f"({rel_si}) and (${{conoce_oficiales_relacionados}}='{v_si}')"
 
-    # 14.1
     survey_rows.append({
         "type": "text",
         "name": "describe_situacion_oficiales",
@@ -800,69 +744,42 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_14_si
     })
 
-    # 15 (voluntaria)
+    # 15 (voluntaria) -> required vacío (NO False)
     survey_rows.append({
         "type": "text",
         "name": "medio_contacto_voluntario",
         "label": "15- Desea, de manera voluntaria, dejar un medio de contacto para brindar más información (correo electrónico, número de teléfono, etc.)",
-        "required": False,
+        "required": "",
         "appearance": "multiline",
-        "relevant": rel_si
-    })
-
-    # Acceso opcional a Glosario (NO obligatorio)
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "ver_glosario_p5",
-        "label": "¿Desea acceder al glosario de esta sección?",
-        "required": "no",
-        "appearance": "minimal",
         "relevant": rel_si
     })
 
     survey_rows.append({"type": "end_group", "name": "p5_end"})
 
-    # Página 5.5: Glosario Interés interno (condicional si responde Sí)
-    rel_glos_p5 = f"({rel_si}) and (${{ver_glosario_p5}}='{v_si}')"
+    # Glosario P5 (opcional)
     survey_rows.append({
-        "type": "begin_group",
-        "name": "p5_5_glosario",
-        "label": "Glosario — Información de interés interno",
-        "appearance": "field-list",
-        "relevant": rel_glos_p5
+        "type": f"select_one {list_yesno}",
+        "name": "p5_ver_glosario",
+        "label": "¿Desea acceder al glosario de esta sección?",
+        "required": "",
+        "appearance": "minimal",
+        "relevant": rel_si
     })
-
-    survey_rows.append({
-        "type": "note",
-        "name": "p5_5_glosario_info",
-        "label": "Para volver a la sección anterior, utilice el botón “Anterior”.",
-        "relevant": rel_glos_p5
-    })
-
-    for i, (term, defin) in enumerate(GLOS_P5_ITEMS, start=1):
-        survey_rows.append({
-            "type": "note",
-            "name": f"p5_5_term_{i}",
-            "label": f"{term}: {defin}",
-            "relevant": rel_glos_p5
-        })
-
-    # END SOLO en glosario: evita que el usuario avance desde glosario
-    survey_rows.append({
-        "type": "end",
-        "name": "fin_en_glosario_p5",
-        "label": "Fin del glosario. Use “Anterior” para regresar a la sección anterior y continuar con la encuesta.",
-        "relevant": rel_glos_p5
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p5_5_end"})
+    add_glossary_page(
+        survey_rows,
+        page_name="p5_glosario",
+        page_label="Glosario — Información de interés interno",
+        relevant=f"({rel_si}) and (${{p5_ver_glosario}}='{v_si}')",
+        items=GLOSARIO_P5
+    )
 
     # =========================
     # DataFrames
     # =========================
     survey_cols = [
         "type", "name", "label", "required", "appearance",
-        "relevant", "media::image", "constraint", "constraint_message", "hint"
+        "relevant", "media::image", "constraint", "constraint_message", "hint",
+        "bind::esri:fieldType"
     ]
     df_survey = pd.DataFrame(survey_rows, columns=survey_cols).fillna("")
     df_choices = pd.DataFrame(choices_rows, columns=["list_name", "name", "label"]).fillna("")
@@ -922,4 +839,5 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 1) Crear encuesta **desde archivo** y seleccionar el XLSForm descargado.  
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
+4) IMPORTANTE: Los textos largos (notes) ya NO crean columnas en la tabla porque se marcó `bind::esri:fieldType = null`.  
 """)
