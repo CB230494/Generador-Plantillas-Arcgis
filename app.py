@@ -1,14 +1,19 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
-# App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial
+# App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial + Interés Interno
 # - Página 1: Introducción con logo + delegación + texto corto (exacto)
 # - Página 2: Consentimiento Informado ORDENADO (título + párrafos + viñetas + cierre)
 #            + pregunta ¿Acepta participar? (Sí/No)
 #            + Si responde "No" => finaliza (end)
-# - Página 3: Datos generales (según imágenes) + condicionales en pregunta 5
+# - Página 3: Datos generales (según imágenes) + condicionales en pregunta 5 (5.1–5.4)
 # - Página 4: Información de interés policial (según imágenes)
 #            + 6 (Sí/No) y si "Sí" se habilitan 6.1 a 6.4
-#            + Notas: solo se incluyen las que DEBEN verse en la encuesta (nota previa confidencial y notas de respuesta)
+#            + 7 y 8 (abiertas)
+#            + Notas: se incluyen como hint cuando son de respuesta / o como note cuando aplica
+# - Página 5: Información de interés interno (según imágenes)
+#            + Condicionales: 10.1 si 10="No"; 11.1 si 11="Sí"; 12.1 si 12 in ("Poco","Nada")
+#                             13.1 si 13="Sí"; 14.1 si 14="Sí"
+#            + 15 opcional (contacto voluntario)
 # - Exporta XLSForm (Excel) con hojas: survey / choices / settings
 # ==========================================================================================
 
@@ -22,15 +27,16 @@ import pandas as pd
 # ==========================================================================================
 # Configuración
 # ==========================================================================================
-st.set_page_config(page_title="XLSForm Survey123 — (Páginas 1 a 4)", layout="wide")
-st.title("XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial")
+st.set_page_config(page_title="XLSForm Survey123 — (Páginas 1 a 5)", layout="wide")
+st.title("XLSForm Survey123 — Introducción + Consentimiento + Datos + Interés Policial + Interés Interno")
 
 st.markdown("""
 Genera un **XLSForm** listo para **ArcGIS Survey123** con páginas reales (Next/Back):
 - **Página 1**: Introducción (logo + delegación + texto).
 - **Página 2**: Consentimiento Informado (ordenado) + aceptación.
 - **Página 3**: Datos generales (con condicionales en la pregunta 5).
-- **Página 4**: Información de interés policial (con condicionales 6.1–6.4 si 6 = “Sí”).
+- **Página 4**: Información de interés policial (condicionales 6.1–6.4 si 6 = “Sí”).
+- **Página 5**: Información de interés interno (condicionales 10.1, 11.1, 12.1, 13.1, 14.1).
 """)
 
 # ==========================================================================================
@@ -151,7 +157,7 @@ CONSENT_CIERRE = [
 ]
 
 # ==========================================================================================
-# Página 4: Información de interés policial (texto visible que SÍ va en la encuesta)
+# Página 4: Interés policial (texto visible que SÍ va en la encuesta)
 # ==========================================================================================
 P4_INTRO_TITULO = "Información de interés policial"
 P4_INTRO_TEXTO = (
@@ -165,6 +171,19 @@ NOTA_PREVIA_CONFIDENCIAL = (
     "Nota previa: La información solicitada en los siguientes apartados es de carácter "
     "confidencial, para uso institucional y análisis preventivo. No constituye denuncia formal."
 )
+
+# ==========================================================================================
+# Página 5: Interés interno (NOTAS que sí van en encuesta se ponen como hint o note)
+# ==========================================================================================
+HINT_ABIERTA_GENERAL = "Respuesta abierta para que la persona encuestada pueda agregar la información adecuada."
+HINT_ABIERTA_SIMPLE = "Respuesta abierta."
+HINT_CONFIDENCIAL_INSTITUCIONAL = "La información suministrada es confidencial y de uso institucional."
+HINT_ANALISIS_PREVENTIVO = (
+    "Esta información será utilizada exclusivamente para análisis preventivo institucional "
+    "y no sustituye los mecanismos formales de denuncia."
+)
+HINT_VOLUNTARIA = "Respuesta abierta. Información voluntaria."
+HINT_CONFIDENCIAL = "Respuesta abierta. Información de carácter confidencial."
 
 # ==========================================================================================
 # Construcción XLSForm
@@ -246,7 +265,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "Encargado Grupo Operativo Policial",
     ])
 
-    # Página 4 - Lista de actividades delictivas (6.1) (select_multiple)
+    # Página 4 - Actividad delictiva (6.1)
     list_actividad_delictiva = "actividad_delictiva"
     actividad_opts = [
         "Punto de Venta y distribución de Drogas. Búnker (espacio cerrado para la venta y distribución de drogas).",
@@ -271,6 +290,11 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "Otro"
     ]
     add_choice_list(choices_rows, list_actividad_delictiva, actividad_opts)
+
+    # Página 5 - Motivación (12)
+    list_motivacion = "motivacion"
+    motivacion_opts = ["Mucho", "Algo", "Poco", "Nada"]
+    add_choice_list(choices_rows, list_motivacion, motivacion_opts)
 
     # =========================
     # Página 1: Introducción (SIN "Portada")
@@ -318,7 +342,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     rel_si = f"${{acepta_participar}}='{v_si}'"
 
     # =========================
-    # Página 3: Datos generales (SOLO si acepta SÍ)
+    # Página 3: Datos generales
     # =========================
     survey_rows.append({
         "type": "begin_group",
@@ -335,13 +359,14 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "required": "yes",
         "constraint": ". >= 0 and . <= 50",
         "constraint_message": "Debe ser un número entre 0 y 50.",
+        "hint": "Indique únicamente la cantidad de años completos de servicio (en números). Asignar un formato de 0 a 50 años",
         "relevant": rel_si
     })
 
     survey_rows.append({
         "type": f"select_one {list_edad}",
         "name": "edad_rango",
-        "label": "2- Edad.",
+        "label": "2- Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
         "required": "yes",
         "relevant": rel_si
     })
@@ -410,7 +435,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     survey_rows.append({"type": "end_group", "name": "p3_end"})
 
     # =========================
-    # Página 4: Información de interés policial (SOLO si acepta SÍ)
+    # Página 4: Interés policial
     # =========================
     survey_rows.append({
         "type": "begin_group",
@@ -420,10 +445,8 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # Intro visible
     survey_rows.append({"type": "note", "name": "p4_intro", "label": P4_INTRO_TEXTO, "relevant": rel_si})
 
-    # 6 - Sí/No
     survey_rows.append({
         "type": f"select_one {list_yesno}",
         "name": "conocimiento_estructuras",
@@ -433,10 +456,8 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # Condición: si 6 = Sí, habilitar 6.1–6.4
     rel_6_si = f"({rel_si}) and (${{conocimiento_estructuras}}='{v_si}')"
 
-    # 6.1 - select_multiple (opción múltiple)
     survey_rows.append({
         "type": f"select_multiple {list_actividad_delictiva}",
         "name": "tipo_actividad_delictiva",
@@ -445,7 +466,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_6_si
     })
 
-    # Nota previa confidencial (visible) antes de 6.2–6.4
     survey_rows.append({
         "type": "note",
         "name": "p4_nota_previa_634",
@@ -453,7 +473,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_6_si
     })
 
-    # 6.2 - texto corto
     survey_rows.append({
         "type": "text",
         "name": "nombre_estructura_criminal",
@@ -462,9 +481,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_6_si
     })
 
-    # (se repite “Nota previa” en el documento; para evitar saturación en Survey123,
-    #  la dejamos una sola vez visible, aplicada a 6.2–6.4)
-    # 6.3 - párrafo
     survey_rows.append({
         "type": "text",
         "name": "quienes_actos_criminales",
@@ -474,7 +490,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_6_si
     })
 
-    # 6.4 - párrafo
     survey_rows.append({
         "type": "text",
         "name": "modo_operar_estructura",
@@ -484,7 +499,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_6_si
     })
 
-    # 7 - texto abierto (no depende de 6)
     survey_rows.append({
         "type": "text",
         "name": "zona_mayor_inseguridad",
@@ -495,7 +509,6 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
         "relevant": rel_si
     })
 
-    # 8 - texto abierto (no depende de 6)
     survey_rows.append({
         "type": "text",
         "name": "condiciones_riesgo_zona",
@@ -507,6 +520,153 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     })
 
     survey_rows.append({"type": "end_group", "name": "p4_end"})
+
+    # =========================
+    # Página 5: Interés interno (NUEVA)
+    # =========================
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p5_interes_interno",
+        "label": "Información de interés interno",
+        "appearance": "field-list",
+        "relevant": rel_si
+    })
+
+    # 9
+    survey_rows.append({
+        "type": "text",
+        "name": "recursos_necesarios",
+        "label": "9- Desde su experiencia operativa, indique qué recursos considera necesarios para fortalecer la labor policial en su delegación.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": "La respuesta es abierta para que la persona encuestada puedo agregar la información adecuada.",
+        "relevant": rel_si
+    })
+
+    # 10
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "condiciones_necesidades_basicas",
+        "label": "10- ¿Considera que las condiciones actuales de su delegación permiten cubrir adecuadamente sus necesidades básicas para el servicio (descanso, alimentación, recurso móvil, entre otros)?",
+        "required": "yes",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+    rel_10_no = f"({rel_si}) and (${{condiciones_necesidades_basicas}}='{v_no}')"
+
+    # 10.1
+    survey_rows.append({
+        "type": "text",
+        "name": "condiciones_mejorar",
+        "label": "10.1- Cuáles condiciones considera que se pueden mejorar.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": HINT_ABIERTA_SIMPLE,
+        "relevant": rel_10_no
+    })
+
+    # 11
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "falta_capacitacion",
+        "label": "11- ¿Considera usted que hace falta capacitación para el personal en su delegación policial?",
+        "required": "yes",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+    rel_11_si = f"({rel_si}) and (${{falta_capacitacion}}='{v_si}')"
+
+    # 11.1
+    survey_rows.append({
+        "type": "text",
+        "name": "areas_capacitacion",
+        "label": "11.1 Especifique en qué áreas necesita capacitación.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": HINT_ABIERTA_SIMPLE,
+        "relevant": rel_11_si
+    })
+
+    # 12
+    survey_rows.append({
+        "type": f"select_one {list_motivacion}",
+        "name": "motivacion_medida",
+        "label": "12- ¿En qué medida considera que la institución genera un entorno que favorece su motivación para la atención a la ciudadanía?",
+        "required": "yes",
+        "appearance": "minimal",
+        "relevant": rel_si
+    })
+    rel_12_poco_nada = f"({rel_si}) and (${{motivacion_medida}}='{slugify_name('Poco')}' or ${{motivacion_medida}}='{slugify_name('Nada')}')"
+
+    # 12.1
+    survey_rows.append({
+        "type": "text",
+        "name": "motivo_motivacion_baja",
+        "label": "12.1 De manera general, indique por qué lo considera así.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": HINT_ABIERTA_SIMPLE,
+        "relevant": rel_12_poco_nada
+    })
+
+    # 13
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "situaciones_internas_afectan",
+        "label": "13- ¿Tiene usted conocimiento de situaciones internas que, según su criterio, afectan el adecuado funcionamiento operativo o el servicio a la ciudadanía en su delegación?",
+        "required": "yes",
+        "appearance": "minimal",
+        "hint": HINT_CONFIDENCIAL_INSTITUCIONAL,
+        "relevant": rel_si
+    })
+    rel_13_si = f"({rel_si}) and (${{situaciones_internas_afectan}}='{v_si}')"
+
+    # 13.1
+    survey_rows.append({
+        "type": "text",
+        "name": "describe_situaciones_internas",
+        "label": "13.1 Describa, de manera general, las situaciones a las que se refiere, relacionadas con aspectos operativos, administrativos o de servicio.",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": "Respuesta abierta. Información confidencial.",
+        "relevant": rel_13_si
+    })
+
+    # 14
+    survey_rows.append({
+        "type": f"select_one {list_yesno}",
+        "name": "conoce_oficiales_relacionados",
+        "label": "14- ¿Conoce oficiales de Fuerza Pública que se relacionen con alguna estructura criminal o cometan algún delito?",
+        "required": "yes",
+        "appearance": "minimal",
+        "hint": HINT_ANALISIS_PREVENTIVO,
+        "relevant": rel_si
+    })
+    rel_14_si = f"({rel_si}) and (${{conoce_oficiales_relacionados}}='{v_si}')"
+
+    # 14.1
+    survey_rows.append({
+        "type": "text",
+        "name": "describe_situacion_oficiales",
+        "label": "14.1 Describa la situación de la cual tiene conocimiento. (aporte nombre de la estructura, tipo de actividad, nombre de oficiales, función del oficial dentro de la organización, alias, etc.)",
+        "required": "yes",
+        "appearance": "multiline",
+        "hint": HINT_CONFIDENCIAL,
+        "relevant": rel_14_si
+    })
+
+    # 15 (voluntaria)
+    survey_rows.append({
+        "type": "text",
+        "name": "medio_contacto_voluntario",
+        "label": "15- Desea, de manera voluntaria, dejar un medio de contacto para brindar más información (correo electrónico, número de teléfono, etc.)",
+        "required": False,
+        "appearance": "multiline",
+        "hint": HINT_VOLUNTARIA,
+        "relevant": rel_si
+    })
+
+    survey_rows.append({"type": "end_group", "name": "p5_end"})
 
     # =========================
     # DataFrames
