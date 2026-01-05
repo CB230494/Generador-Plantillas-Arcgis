@@ -173,7 +173,7 @@ P4_INTRO_TEXTO = (
 )
 
 NOTA_PREVIA_CONFIDENCIAL = (
-    "Nota previa: La información solicitada en los siguientes apartados es de carácter "
+    "La información solicitada en los siguientes apartados es de carácter "
     "confidencial, para uso institucional y análisis preventivo. No constituye denuncia formal."
 )
 
@@ -649,7 +649,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     survey_rows.append({
         "type": "note",
         "name": "p4_5_glosario_info",
-        "label": "Para volver a la sección anterior, utilice el botón “Anterior”.",
+        "label": "Para volver a la sección anterior, utilice el botón “Atrás”.",
         "relevant": rel_glos_p4
     })
 
@@ -665,7 +665,7 @@ def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, versio
     survey_rows.append({
         "type": "end",
         "name": "fin_en_glosario_p4",
-        "label": "Fin del glosario. Use “Anterior” para regresar a la sección anterior y continuar con la encuesta.",
+        "label": "Fin del glosario. Use “Atrás” para regresar a la sección anterior y continuar con la encuesta.",
         "relevant": rel_glos_p4
     })
 
@@ -923,4 +923,5 @@ if st.button("🧮 Construir XLSForm", use_container_width=True):
 2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
 3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
 """)
+
 
