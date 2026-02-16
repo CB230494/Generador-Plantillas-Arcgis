@@ -1,15 +1,26 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
 # App: Encuesta FUERZA PÚBLICA → XLSForm para ArcGIS Survey123 (versión extendida)
-# - MISMA UI y funcionalidades: constructor CRUD, qid estable, JSON, XLSForm, pages, logo, consent.
-# - SOLO 3 páginas:
-#     P1 Intro FP 2026
-#     P2 Consentimiento (bloques) + finaliza si NO
-#     P3 Datos generales (intro + preguntas)
+# - Constructor completo (agregar/editar/ordenar/borrar)
+# - Condicionales (relevant) + finalizar temprano
+# - Exportar/Importar proyecto (JSON)
+# - Exportar a XLSForm (survey/choices/settings)
+# - PÁGINAS reales (style="pages"): Intro + Consentimiento + Secciones por páginas
+# - Portada con logo (media::image) y texto de introducción
+# - Consentimiento:
+#     - Texto en BLOQUES (notes separados) para que se vea ordenado en Survey123
+#     - Si marca "No" ⇒ NO muestra el resto de páginas y cae a una página final para enviar
+# - FIX: Al editar preguntas/opciones, los cambios SIEMPRE se reflejan (qid estable)
 #
-# ✅ CORRECCIÓN CLAVE:
-# - ELIMINA AUTOMÁTICAMENTE cualquier resto de "canton" / "distrito" (por JSON viejo o estado previo),
-#   para evitar el error: "List name not in choices sheet: list_canton".
+# ✅ ESTA VERSIÓN (FUERZA PÚBLICA) TRAE (por ahora):
+#   - P1 Intro (Policial Percepción Institucional 2026)
+#   - P2 Consentimiento (MISMO de antes) + Finalización si NO
+#   - P3 Datos generales (título+intro) + preguntas 1..5.1
+#   - P4 Información de interés policial (título+intro) + preguntas 6..8 (con lógica 6=>6.1-6.4)
+#
+# ✅ IMPORTANTE:
+#   - ESTA ENCUESTA NO LLEVA CANTÓN/DISTRITO (se eliminó todo lo de list_canton / catálogo).
+#   - Si marca "Otro" (o similar) en una pregunta, se habilita el texto SOLO en ese caso.
 # ==========================================================================================
 
 import re
@@ -17,7 +28,7 @@ import json
 import uuid
 from io import BytesIO
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import streamlit as st
 import pandas as pd
@@ -26,18 +37,17 @@ import pandas as pd
 # Configuración de la app
 # ------------------------------------------------------------------------------------------
 st.set_page_config(page_title="Encuesta Fuerza Pública → XLSForm (Survey123)", layout="wide")
-st.title("🚔 Encuesta Fuerza Pública → XLSForm para ArcGIS Survey123")
+st.title("👮 Encuesta Fuerza Pública → XLSForm para ArcGIS Survey123")
 
 st.markdown("""
 Crea tu cuestionario y **exporta un XLSForm** listo para **ArcGIS Survey123**.
 
 Incluye:
-- Tipos: **text**, **integer**, **date**, **time**, **geopoint**, **select_one**, **select_multiple**.
+- Tipos: **text**, **integer/decimal**, **date**, **time**, **geopoint**, **select_one**, **select_multiple**.
 - **Constructor completo** (agregar, editar, ordenar, borrar) con condicionales.
 - **Páginas** con navegación **Siguiente/Anterior** (`settings.style = pages`).
 - **Portada** con **logo** (`media::image`) e **introducción**.
 - **Consentimiento informado** (si NO acepta, la encuesta termina) con texto ordenado por bloques.
-- **Exportar/Importar proyecto (JSON)**.
 """)
 
 # ------------------------------------------------------------------------------------------
@@ -100,25 +110,32 @@ def map_tipo_to_xlsform(tipo_ui: str, name: str):
         return ("geopoint", None, None)
     return ("text", None, None)
 
-def xlsform_or_expr(conds):
+def xlsform_or_expr(conds: List[str]) -> Optional[str]:
+    conds = [c for c in (conds or []) if c]
     if not conds:
         return None
     if len(conds) == 1:
         return conds[0]
     return "(" + " or ".join(conds) + ")"
 
-def xlsform_not(expr):
+def xlsform_not(expr: Optional[str]) -> Optional[str]:
     if not expr:
         return None
     return f"not({expr})"
 
-def build_relevant_expr(rules_for_target: List[Dict]):
+def build_relevant_expr(rules_for_target: List[Dict]) -> Optional[str]:
+    """
+    rules_for_target: lista de reglas:
+      {"src": "q_name", "op": "=", "values": ["slug1","slug2"]}  o
+      {"src": "q_name", "op": "selected", "values": ["slug1","slug2"]}
+    Se combinan en OR por regla, y OR entre reglas.
+    """
     or_parts = []
-    for r in rules_for_target:
-        src = r["src"]
+    for r in rules_for_target or []:
+        src = r.get("src")
         op = r.get("op", "=")
-        vals = r.get("values", [])
-        if not vals:
+        vals = r.get("values", []) or []
+        if not src or not vals:
             continue
 
         if op == "=":
@@ -134,7 +151,7 @@ def build_relevant_expr(rules_for_target: List[Dict]):
     return xlsform_or_expr(or_parts)
 
 # ------------------------------------------------------------------------------------------
-# FIX REFLEJO DE EDICIÓN: ID estable por pregunta (qid)
+# FIX REFLEJO DE EDICIÓN: ID estable por pregunta (qid) + editor por qid
 # ------------------------------------------------------------------------------------------
 def ensure_qid(q: Dict) -> Dict:
     if "qid" not in q or not q["qid"]:
@@ -148,33 +165,6 @@ def q_index_by_qid(qid: str) -> int:
     return -1
 
 # ------------------------------------------------------------------------------------------
-# ✅ SANITIZADOR: elimina CANTON/DISTRITO y limpia reglas/choice_filter que los referencien
-# ------------------------------------------------------------------------------------------
-BAN_NAMES = {"canton", "distrito"}
-
-def sanitize_state():
-    # 1) limpiar preguntas canton/distrito
-    preguntas = [ensure_qid(q) for q in st.session_state.get("preguntas", [])]
-    preguntas = [q for q in preguntas if q.get("name") not in BAN_NAMES]
-
-    # 2) limpiar choice_filter que use ${canton}/${distrito}
-    for q in preguntas:
-        cf = q.get("choice_filter") or ""
-        if "${canton}" in cf or "${distrito}" in cf:
-            q["choice_filter"] = None
-
-    st.session_state.preguntas = preguntas
-
-    # 3) limpiar reglas que referencien canton/distrito
-    rv = list(st.session_state.get("reglas_visibilidad", []))
-    rv = [r for r in rv if r.get("target") not in BAN_NAMES and r.get("src") not in BAN_NAMES]
-    st.session_state.reglas_visibilidad = rv
-
-    rf = list(st.session_state.get("reglas_finalizar", []))
-    rf = [r for r in rf if r.get("src") not in BAN_NAMES]
-    st.session_state.reglas_finalizar = rf
-
-# ------------------------------------------------------------------------------------------
 # Estado base (session_state)
 # ------------------------------------------------------------------------------------------
 if "preguntas" not in st.session_state:
@@ -183,8 +173,7 @@ if "reglas_visibilidad" not in st.session_state:
     st.session_state.reglas_visibilidad = []
 if "reglas_finalizar" not in st.session_state:
     st.session_state.reglas_finalizar = []
-if "textos_fijos" not in st.session_state:
-    st.session_state.textos_fijos = {}
+
 if "edit_qid" not in st.session_state:
     st.session_state.edit_qid = None
 
@@ -212,64 +201,78 @@ with col_logo:
 
 with col_txt:
     st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    delegacion = st.text_input("Nombre del lugar / Delegación", value="Alajuela Norte", key="delegacion_txt")
+    delegacion = st.text_input("Nombre de la Delegación (a la que va dirigida)", value="Alajuela Norte", key="delegacion_txt")
     logo_media_name = st.text_input(
         "Nombre de archivo para `media::image`",
         value=st.session_state.get("_logo_name", "001.png"),
         help="Debe coincidir con el archivo en `media/` de Survey123 Connect.",
         key="logo_media_txt"
     )
-    titulo_compuesto = (f"Encuesta Fuerza Pública – {delegacion.strip()}" if delegacion.strip() else "Encuesta Fuerza Pública")
+    titulo_compuesto = (f"Encuesta Policial de Percepción Institucional 2026 – {delegacion.strip()}"
+                        if delegacion.strip() else
+                        "Encuesta Policial de Percepción Institucional 2026")
     st.markdown(f"<h5 style='text-align:center;margin:4px 0'>📋 {titulo_compuesto}</h5>", unsafe_allow_html=True)
 
+def _get_logo_media_name():
+    """
+    Devuelve el nombre del archivo para media::image.
+    Debe existir en la carpeta media/ del proyecto Survey123 Connect.
+    """
+    return st.session_state.get("logo_media_txt") or st.session_state.get("_logo_name") or "001.png"
+
 # ------------------------------------------------------------------------------------------
-# Textos base (Intro FP + Datos Generales) + Consentimiento
+# Textos base (Intro / Consentimiento / Intros de páginas)
 # ------------------------------------------------------------------------------------------
-INTRO_FP = (
+INTRO_FUERZA_PUBLICA = (
     "El presente formato corresponde a la Encuesta Policial de Percepción Institucional 2026, dirigida al personal de la Fuerza Pública, "
-    "y orientada a recopilar información relevante desde la experiencia operativa y territorial del funcionariado policial, en relación con "
-    "la seguridad, la convivencia y los factores de riesgo presentes en las distintas jurisdicciones del país. "
+    "y orientada a recopilar información relevante desde la experiencia operativa y territorial del funcionariado policial, en relación con la "
+    "seguridad, la convivencia y los factores de riesgo presentes en las distintas jurisdicciones del país. "
     "El instrumento incorpora la percepción del personal sobre condiciones institucionales que inciden en la prestación del servicio policial, "
-    "tales como el entorno operativo de la delegación, la disponibilidad de recursos, las necesidades de capacitación y el entorno institucional "
-    "que favorece la motivación para la atención a la ciudadanía. "
+    "tales como el entorno operativo de la delegación, la disponibilidad de recursos, las necesidades de capacitación y el entorno institucional que "
+    "favorece la motivación para la atención a la ciudadanía. "
     "La información recopilada servirá como insumo para el análisis institucional, la planificación preventiva y la mejora continua del servicio policial. "
     "El documento se remite para su revisión y validación técnica, con el fin de asegurar su coherencia metodológica, normativa y operativa, previo a su aplicación en territorio."
 )
 
-DATOS_GENERALES_INTRO = (
-    "Datos generales\n\n"
-    "“Esta encuesta busca recopilar información desde la experiencia del personal de la Fuerza Pública para apoyar la planificación preventiva y la mejora del servicio policial.”"
+# Datos generales
+TIT_DATOS_GENERALES = "Datos generales"
+INTRO_DATOS_GENERALES = "Esta encuesta busca recopilar información desde la experiencia del personal de la Fuerza Pública para apoyar la planificación preventiva y la mejora del servicio policial."
+
+# Nueva página (Información de interés policial)
+TIT_INTERES_POLICIAL = "Información de interés policial"
+INTRO_INTERES_POLICIAL = (
+    "En este apartado, el objetivo principal es comprender las estructuras criminales y las problemáticas de interés policial presentes en la jurisdicción de la delegación. "
+    "A través de esto se busca obtener una visión clara de la naturaleza y dinámicas de las organizaciones criminales en la zona."
 )
 
+# Consentimiento (MISMO que venías usando)
 CONSENTIMIENTO_TITULO = "Consentimiento Informado para la Participación en la Encuesta"
 CONSENT_SI = slugify_name("Sí")
 CONSENT_NO = slugify_name("No")
 
 CONSENTIMIENTO_BLOQUES = [
     "Usted está siendo invitado(a) a participar de forma libre y voluntaria en una encuesta sobre seguridad, convivencia y percepción ciudadana, dirigida a personas mayores de 18 años.",
-    "El objetivo de esta encuesta es recopilar información de carácter preventivo y estadístico, con el fin de apoyar la planificación de acciones de prevención, mejora de la convivencia y fortalecimiento de la seguridad en comunidades y zonas comerciales.",
+    "El objetivo de esta encuesta es recopilar información de carácter preventivo y estadístico, con el fin de apoyar la planificación de acciones de prevención, mejora de la convivencia y fortalecimiento de la seguridad.",
     "La participación es totalmente voluntaria. Usted puede negarse a responder cualquier pregunta, así como retirarse de la encuesta en cualquier momento, sin que ello genere consecuencia alguna.",
     "De conformidad con lo dispuesto en el artículo 5 de la Ley N.º 8968 (Protección de la Persona frente al Tratamiento de sus Datos Personales), se le informa que:",
     "Finalidad del tratamiento: La información recopilada será utilizada exclusivamente para fines estadísticos, analíticos y preventivos, y no para investigaciones penales, procesos judiciales, sanciones administrativas ni procedimientos disciplinarios.",
     "Datos personales: Algunos apartados permiten, de forma voluntaria, el suministro de datos personales o información de contacto.",
     "Tratamiento de los datos: Los datos serán almacenados, analizados y resguardados bajo criterios de confidencialidad y seguridad, conforme a la normativa vigente.",
-    "Destinatarios y acceso: La información será conocida únicamente por el personal autorizado de la Fuerza Pública / Ministerio de Seguridad Pública, para los fines indicados. No será cedida a terceros ajenos a estos fines.",
-    "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección de Programas Policiales Preventivos, Oficina Estrategia Integral de Prevención para la Seguridad Pública (EIPESP / Estrategia Sembremos Seguridad), será responsable del tratamiento y custodia de la información recolectada.",
+    "Destinatarios y acceso: La información será conocida únicamente por el personal autorizado del Ministerio de Seguridad Pública / Fuerza Pública, para los fines indicados. No será cedida a terceros ajenos a estos fines.",
+    "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección de Programas Policiales Preventivos (DPPP) y la Estrategia Integral de Prevención para la Seguridad Pública, será responsable del tratamiento y custodia de la información recolectada.",
     "Derechos de la persona participante: Usted conserva el derecho a la autodeterminación informativa y a decidir libremente sobre el suministro de sus datos.",
     "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales correspondientes.",
     "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar."
 ]
+
+NOTA_PREVIA_CONFIDENCIAL = "Nota previa: La información solicitada en los siguientes apartados es de carácter confidencial, para uso institucional y análisis preventivo. No constituye denuncia formal."
 
 # ------------------------------------------------------------------------------------------
 # Sidebar: Exportar/Importar proyecto (JSON) + Config
 # ------------------------------------------------------------------------------------------
 with st.sidebar:
     st.header("⚙️ Configuración")
-    _ = st.text_input(
-        "Título del formulario (referencia)",
-        value=(f"Encuesta Fuerza Pública – {delegacion.strip()}" if delegacion.strip() else "Encuesta Fuerza Pública"),
-        key="sb_form_title_ref"
-    )
+
     idioma = st.selectbox("Idioma por defecto (default_language)", options=["es", "en"], index=0, key="sb_idioma")
     version_auto = datetime.now().strftime("%Y%m%d%H%M")
     version = st.text_input("Versión (settings.version)", value=version_auto, key="sb_version")
@@ -282,16 +285,15 @@ with st.sidebar:
         proj = {
             "idioma": idioma,
             "version": version,
-            "preguntas": st.session_state.preguntas,
+            "preguntas": st.session_state.preguntas,  # incluye qid
             "reglas_visibilidad": st.session_state.reglas_visibilidad,
             "reglas_finalizar": st.session_state.reglas_finalizar,
-            "textos_fijos": st.session_state.textos_fijos,
         }
         jbuf = BytesIO(json.dumps(proj, ensure_ascii=False, indent=2).encode("utf-8"))
         st.download_button(
             "Descargar JSON",
             data=jbuf,
-            file_name="proyecto_encuesta_fp_2026.json",
+            file_name="proyecto_encuesta_fuerza_publica.json",
             mime="application/json",
             use_container_width=True
         )
@@ -307,21 +309,21 @@ with st.sidebar:
 
             st.session_state.reglas_visibilidad = list(data.get("reglas_visibilidad", []))
             st.session_state.reglas_finalizar = list(data.get("reglas_finalizar", []))
-            st.session_state.textos_fijos = dict(data.get("textos_fijos", st.session_state.textos_fijos))
 
             st.session_state.edit_qid = None
-
-            # ✅ LIMPIA restos canton/distrito al importar
-            sanitize_state()
             _rerun()
         except Exception as e:
             st.error(f"No se pudo importar el JSON: {e}")
 
 # ------------------------------------------------------------------------------------------
-# SEED base (sin Cantón/Distrito)
+# Precarga (seed) — FUERZA PÚBLICA (sin cantón/distrito)
 # ------------------------------------------------------------------------------------------
-if "seed_cargado" not in st.session_state:
+if "seed_cargado_fp" not in st.session_state:
+    SLUG_SI = slugify_name("Sí")
+    SLUG_NO = slugify_name("No")
+
     seed = [
+        # ---------------- Consentimiento ----------------
         {"tipo_ui": "Selección única",
          "label": "¿Acepta participar en esta encuesta?",
          "name": "consentimiento",
@@ -331,17 +333,21 @@ if "seed_cargado" not in st.session_state:
          "choice_filter": None,
          "relevant": None},
 
+        # ---------------- P3: Datos generales ----------------
         {"tipo_ui": "Número",
-         "label": "1. Años de servicio (años completos):",
+         "label": "1. Años de servicio:",
          "name": "anos_servicio",
          "required": True,
          "opciones": [],
          "appearance": None,
          "choice_filter": None,
-         "relevant": None},
+         "relevant": None,
+         # validación 0..50 (lo pediste)
+         "constraint": ". >= 0 and . <= 50",
+         "constraint_message": "Indique un valor entre 0 y 50."},
 
         {"tipo_ui": "Selección única",
-         "label": "2. Edad (en años cumplidos): marque una categoría que incluya su edad.",
+         "label": "2. Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
          "name": "edad_rango",
          "required": True,
          "opciones": ["18 a 29 años", "30 a 44 años", "45 a 59 años", "60 años o más"],
@@ -349,9 +355,9 @@ if "seed_cargado" not in st.session_state:
 
         {"tipo_ui": "Selección única",
          "label": "3. ¿Con cuál de estas opciones se identifica?",
-         "name": "identidad_genero",
+         "name": "genero",
          "required": True,
-         "opciones": ["Femenino", "Masculino", "Persona no Binaria", "Prefiero no decir"],
+         "opciones": ["Femenino", "Masculino", "Persona No Binaria", "Prefiero no decir"],
          "appearance": None, "choice_filter": None, "relevant": None},
 
         {"tipo_ui": "Selección única",
@@ -368,11 +374,11 @@ if "seed_cargado" not in st.session_state:
              "Universitaria incompleta",
              "Universitaria completa",
          ],
-         "appearance": None, "choice_filter": None, "relevant": None},
+         "appearance": "columns", "choice_filter": None, "relevant": None},
 
         {"tipo_ui": "Selección única",
          "label": "5. ¿Cuál es su clase policial que desempeña en su delegación?",
-         "name": "clase_policial",
+         "name": "clase_policia",
          "required": True,
          "opciones": [
              "Agente I",
@@ -383,21 +389,11 @@ if "seed_cargado" not in st.session_state:
              "Jefe Sub delegación (distrito)",
              "Sub Jefe de delegación",
              "Jefe de delegación",
-             "Otro",
          ],
-         "appearance": "columns", "choice_filter": None, "relevant": None},
-
-        {"tipo_ui": "Texto (corto)",
-         "label": "Indique cuál es esa otra clase policial:",
-         "name": "clase_policial_otro",
-         "required": True,
-         "opciones": [],
-         "appearance": None,
-         "choice_filter": None,
-         "relevant": f"${{clase_policial}}='{slugify_name('Otro')}'"},
+         "appearance": None, "choice_filter": None, "relevant": None},
 
         {"tipo_ui": "Selección única",
-         "label": "6. ¿Cuál es la función principal que desempeña actualmente en la delegación?",
+         "label": "5.1. ¿Cuál es la función principal que desempeña actualmente en la delegación?",
          "name": "funcion_principal",
          "required": True,
          "opciones": [
@@ -420,16 +416,100 @@ if "seed_cargado" not in st.session_state:
          "name": "funcion_principal_otro",
          "required": True,
          "opciones": [],
-         "appearance": None,
-         "choice_filter": None,
+         "appearance": None, "choice_filter": None,
          "relevant": f"${{funcion_principal}}='{slugify_name('Otra función')}'"},
+
+        # ---------------- P4: Información de interés policial ----------------
+        {"tipo_ui": "Selección única",
+         "label": "6. ¿Tiene conocimiento sobre la presencia de personas, grupos u organizaciones que desarrollan actividades ilícitas en su jurisdicción?",
+         "name": "presencia_estructuras",
+         "required": True,
+         "opciones": ["Sí", "No"],
+         "appearance": "horizontal", "choice_filter": None, "relevant": None},
+
+        {"tipo_ui": "Texto (corto)",
+         "label": "6.1 En caso afirmativo, indique si alguna de estas estructuras es conocida públicamente por un nombre o denominación general:",
+         "name": "estructura_nombre_publico",
+         "required": True,
+         "opciones": [],
+         "appearance": None, "choice_filter": None,
+         "relevant": f"${{presencia_estructuras}}='{SLUG_SI}'"},
+
+        {"tipo_ui": "Selección múltiple",
+         "label": "6.2 En caso afirmativo, ¿qué tipo de actividades delictivas identifica que desarrollan estas personas, grupos u organizaciones en su jurisdicción?",
+         "name": "actividades_delictivas",
+         "required": True,
+         "opciones": [
+             "Punto de Venta y distribución de Drogas. Búnker (espacio cerrado para la venta y distribución de drogas).",
+             "Delitos contra la vida (Homicidios, heridos, femicidios).",
+             "Venta y consumo de drogas en vía pública.",
+             "Delitos sexuales",
+             "Asalto (a personas, comercio, vivienda, transporte público).",
+             "Daños a la propiedad. (Destruir, inutilizar o desaparecer).",
+             "Estafas (Billetes, documentos, oro, lotería falsos).",
+             "Estafa Informática (computadora, tarjetas, teléfonos, etc.).",
+             "Extorsión (intimidar o amenazar a otras personas con fines de lucro).",
+             "Hurto.",
+             "Receptación (persona que adquiere, recibe u oculta artículos provenientes de un delito en el que no participó).",
+             "Robo a edificaciones.",
+             "Robo a vivienda.",
+             "Robo de ganado y agrícola.",
+             "Robo a comercio",
+             "Robo de vehículos.",
+             "Tacha de vehículos.",
+             "Contrabando (licor, cigarrillos, medicinas, ropa, calzado, etc.)",
+             "Tráfico de personas (coyotaje)",
+             "Otro",
+         ],
+         "appearance": "columns",
+         "choice_filter": None,
+         "relevant": f"${{presencia_estructuras}}='{SLUG_SI}'"},
+
+        {"tipo_ui": "Texto (corto)",
+         "label": "Indique cuál es ese otro tipo de actividad delictiva:",
+         "name": "actividades_delictivas_otro",
+         "required": True,
+         "opciones": [],
+         "appearance": None, "choice_filter": None,
+         "relevant": f"${{presencia_estructuras}}='{SLUG_SI}' and selected(${{actividades_delictivas}}, '{slugify_name('Otro')}')"},
+
+        {"tipo_ui": "Párrafo (texto largo)",
+         "label": "6.3 Indique quién o quiénes se dedican a estos actos criminales. (nombres, apellidos, alias, lugar o domicilio)",
+         "name": "quienes_actos_criminales",
+         "required": True,
+         "opciones": [],
+         "appearance": "multiline", "choice_filter": None,
+         "relevant": f"${{presencia_estructuras}}='{SLUG_SI}'"},
+
+        {"tipo_ui": "Párrafo (texto largo)",
+         "label": "6.4 Modo de operar de esta estructura criminal (por ejemplo: venta de droga exprés o en vía pública, asalto a mano armada, modo de desplazamiento, etc.)",
+         "name": "modo_operar_estructura",
+         "required": True,
+         "opciones": [],
+         "appearance": "multiline", "choice_filter": None,
+         "relevant": f"${{presencia_estructuras}}='{SLUG_SI}'"},
+
+        {"tipo_ui": "Párrafo (texto largo)",
+         "label": "7. Indique el lugar, sector o zona que, según su experiencia policial, presenta mayores condiciones de inseguridad dentro de su área de responsabilidad.",
+         "name": "zona_mayor_inseguridad",
+         "required": True,
+         "opciones": [],
+         "appearance": "multiline", "choice_filter": None,
+         "relevant": None},
+
+        {"tipo_ui": "Párrafo (texto largo)",
+         "label": "8. Describa las principales situaciones o condiciones de riesgo que inciden en la inseguridad de esa zona.",
+         "name": "condiciones_riesgo_zona",
+         "required": True,
+         "opciones": [],
+         "appearance": "multiline", "choice_filter": None,
+         "relevant": None},
     ]
 
     st.session_state.preguntas = [ensure_qid(q) for q in seed]
-    st.session_state.seed_cargado = True
+    st.session_state.seed_cargado_fp = True
 
-# ✅ siempre sanitiza (por si quedó basura en el estado)
-sanitize_state()
+# Asegurar qid en todo
 st.session_state.preguntas = [ensure_qid(q) for q in st.session_state.preguntas]
 
 # ------------------------------------------------------------------------------------------
@@ -475,18 +555,16 @@ if add:
         })
         st.session_state.preguntas.append(nueva)
         st.session_state.edit_qid = None
-
-        sanitize_state()
         st.success(f"Pregunta agregada: **{label}** (name: `{unico}`)")
         _rerun()
 
 # ------------------------------------------------------------------------------------------
-# Lista / Ordenado / Edición (qid estable)
+# Lista / Ordenado / Edición (completa) — editor por qid estable
 # ------------------------------------------------------------------------------------------
 st.subheader("📚 Preguntas (ordénalas y edítalas)")
 
 if not st.session_state.preguntas:
-    st.info("Aún no has agregado preguntas.")
+    st.info("Aún no hay preguntas.")
 else:
     for idx, q in enumerate(st.session_state.preguntas):
         q = ensure_qid(q)
@@ -503,6 +581,8 @@ else:
                 meta += f"  •  choice_filter: `{q['choice_filter']}`"
             if q.get("relevant"):
                 meta += f"  •  relevant: `{q['relevant']}`"
+            if q.get("constraint"):
+                meta += f"  •  constraint: `{q['constraint']}`"
             c1.caption(meta)
 
             if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
@@ -529,7 +609,6 @@ else:
                 if st.session_state.edit_qid == qid:
                     st.session_state.edit_qid = None
                 del st.session_state.preguntas[idx]
-                sanitize_state()
                 st.warning("Pregunta eliminada.")
                 _rerun()
 
@@ -542,6 +621,9 @@ else:
                 ne_appearance = st.text_input("Appearance", value=q.get("appearance") or "", key=f"e_app_{qid}")
                 ne_choice_filter = st.text_input("choice_filter (opcional)", value=q.get("choice_filter") or "", key=f"e_cf_{qid}")
                 ne_relevant = st.text_input("relevant (opcional)", value=q.get("relevant") or "", key=f"e_rel_{qid}")
+
+                ne_constraint = st.text_input("constraint (opcional)", value=q.get("constraint") or "", key=f"e_con_{qid}")
+                ne_constraint_msg = st.text_input("constraint_message (opcional)", value=q.get("constraint_message") or "", key=f"e_conmsg_{qid}")
 
                 ne_opciones = q.get("opciones") or []
                 if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
@@ -565,18 +647,15 @@ else:
                     st.session_state.preguntas[cur_idx]["name"] = ne_name_final
                     st.session_state.preguntas[cur_idx]["required"] = ne_required
                     st.session_state.preguntas[cur_idx]["appearance"] = ne_appearance.strip() or None
-
-                    cf = ne_choice_filter.strip() or None
-                    if cf and ("${canton}" in cf or "${distrito}" in cf):
-                        cf = None
-                    st.session_state.preguntas[cur_idx]["choice_filter"] = cf
-
+                    st.session_state.preguntas[cur_idx]["choice_filter"] = ne_choice_filter.strip() or None
                     st.session_state.preguntas[cur_idx]["relevant"] = ne_relevant.strip() or None
+
+                    st.session_state.preguntas[cur_idx]["constraint"] = ne_constraint.strip() or None
+                    st.session_state.preguntas[cur_idx]["constraint_message"] = ne_constraint_msg.strip() or None
 
                     if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
                         st.session_state.preguntas[cur_idx]["opciones"] = ne_opciones
 
-                    sanitize_state()
                     st.success("Cambios guardados.")
                     st.session_state.edit_qid = None
                     _rerun()
@@ -589,20 +668,23 @@ else:
 # Condicionales (panel)
 # ------------------------------------------------------------------------------------------
 st.subheader("🔀 Condicionales (mostrar / finalizar)")
+
 if not st.session_state.preguntas:
     st.info("Agrega preguntas para definir condicionales.")
 else:
-    with st.expander("👁️ Mostrar pregunta si se cumple condición", expanded=False):
-        names = [q["name"] for q in st.session_state.preguntas]
-        labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
+    names = [q["name"] for q in st.session_state.preguntas]
+    labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
 
+    # Mostrar
+    with st.expander("👁️ Mostrar pregunta si se cumple condición", expanded=False):
         target = st.selectbox("Pregunta a mostrar (target)", options=names,
                               format_func=lambda n: f"{n} — {labels_by_name[n]}",
                               key="vis_target")
         src = st.selectbox("Depende de (source)", options=names,
                            format_func=lambda n: f"{n} — {labels_by_name[n]}",
                            key="vis_src")
-        op = st.selectbox("Operador", options=["=", "selected"], key="vis_op")
+        op = st.selectbox("Operador", options=["=", "selected", "!="], key="vis_op")
+
         src_q = next((qq for qq in st.session_state.preguntas if qq["name"] == src), None)
 
         vals = []
@@ -620,7 +702,6 @@ else:
                 st.error("Indica al menos un valor.")
             else:
                 st.session_state.reglas_visibilidad.append({"target": target, "src": src, "op": op, "values": vals})
-                sanitize_state()
                 st.success("Regla agregada.")
                 _rerun()
 
@@ -630,17 +711,15 @@ else:
                 st.write(f"- Mostrar **{r['target']}** si **{r['src']}** {r['op']} {r['values']}")
                 if st.button(f"Eliminar regla #{i+1}", key=f"del_vis_{i}"):
                     del st.session_state.reglas_visibilidad[i]
-                    sanitize_state()
                     _rerun()
 
+    # Finalizar
     with st.expander("⏹️ Finalizar temprano si se cumple condición", expanded=False):
-        names = [q["name"] for q in st.session_state.preguntas]
-        labels_by_name = {q["name"]: q["label"] for q in st.session_state.preguntas}
-
         src2 = st.selectbox("Condición basada en", options=names,
                             format_func=lambda n: f"{n} — {labels_by_name[n]}",
                             key="final_src")
         op2 = st.selectbox("Operador", options=["=", "selected", "!="], key="final_op")
+
         src2_q = next((qq for qq in st.session_state.preguntas if qq["name"] == src2), None)
 
         vals2 = []
@@ -657,7 +736,6 @@ else:
             else:
                 idx_src = next((i for i, qq in enumerate(st.session_state.preguntas) if qq["name"] == src2), 0)
                 st.session_state.reglas_finalizar.append({"src": src2, "op": op2, "values": vals2, "index_src": idx_src})
-                sanitize_state()
                 st.success("Regla agregada.")
                 _rerun()
 
@@ -667,20 +745,10 @@ else:
                 st.write(f"- Si **{r['src']}** {r['op']} {r['values']} ⇒ ocultar lo que sigue (efecto fin)")
                 if st.button(f"Eliminar regla fin #{i+1}", key=f"del_fin_{i}"):
                     del st.session_state.reglas_finalizar[i]
-                    sanitize_state()
                     _rerun()
 
 # ------------------------------------------------------------------------------------------
-# Helper logo
-# ------------------------------------------------------------------------------------------
-def _get_logo_media_name():
-    try:
-        return st.session_state.get("_logo_name") or st.session_state.get("logo_media_txt") or "001.png"
-    except Exception:
-        return "001.png"
-
-# ------------------------------------------------------------------------------------------
-# Construir XLSForm (3 páginas)
+# Construcción XLSForm (survey/choices/settings) con páginas
 # ------------------------------------------------------------------------------------------
 def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
                       reglas_vis, reglas_fin):
@@ -697,36 +765,16 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     idx_by_name = {q.get("name"): i for i, q in enumerate(preguntas)}
 
     vis_by_target = {}
-    for r in reglas_vis:
+    for r in reglas_vis or []:
         vis_by_target.setdefault(r["target"], []).append(
             {"src": r["src"], "op": r.get("op", "="), "values": r.get("values", [])}
         )
 
     fin_conds = []
-    for r in reglas_fin:
+    for r in reglas_fin or []:
         cond = build_relevant_expr([{"src": r["src"], "op": r.get("op", "="), "values": r.get("values", [])}])
         if cond:
             fin_conds.append((r["index_src"], cond))
-
-    def _aplicar_exclusividad_no_observa(row: Dict, q: Dict):
-        if q.get("tipo_ui") != "Selección múltiple":
-            return
-        opts = q.get("opciones") or []
-        if not opts:
-            return
-
-        exclusivas = [o for o in opts if str(o).strip().lower().startswith("no se observa")]
-        if not exclusivas:
-            exclusivas = [o for o in opts if str(o).strip().lower().startswith("no se observan")]
-        if not exclusivas:
-            return
-
-        ex_label = exclusivas[0]
-        ex_slug = slugify_name(ex_label)
-        nm = q["name"]
-
-        row["constraint"] = f"not(selected(${{{nm}}}, '{ex_slug}') and count-selected(${{{nm}}})>1)"
-        row["constraint_message"] = f"Si selecciona “{ex_label}”, no puede marcar otras opciones."
 
     def add_q(q, idx):
         x_type, default_app, list_name = map_tipo_to_xlsform(q["tipo_ui"], q["name"])
@@ -743,15 +791,22 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
         row = {"type": x_type, "name": q["name"], "label": q["label"]}
         if q.get("required"):
             row["required"] = "yes"
+
         app = q.get("appearance") or default_app
         if app:
             row["appearance"] = app
+
         if q.get("choice_filter"):
             row["choice_filter"] = q["choice_filter"]
+
         if rel_final:
             row["relevant"] = rel_final
 
-        _aplicar_exclusividad_no_observa(row, q)
+        if q.get("constraint"):
+            row["constraint"] = q["constraint"]
+        if q.get("constraint_message"):
+            row["constraint_message"] = q["constraint_message"]
+
         survey_rows.append(row)
 
         if list_name:
@@ -762,16 +817,21 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
                 usados.add(opt_name)
                 _choices_add_unique({"list_name": list_name, "name": opt_name, "label": str(opt_label)})
 
-    # P1 Intro
+    # --------------------------------------------------------------------------------------
+    # Página 1: Intro
+    # --------------------------------------------------------------------------------------
     survey_rows += [
         {"type": "begin_group", "name": "p1_intro", "label": "Introducción", "appearance": "field-list"},
         {"type": "note", "name": "intro_logo", "label": form_title, "media::image": _get_logo_media_name()},
-        {"type": "note", "name": "intro_texto", "label": INTRO_FP},
+        {"type": "note", "name": "intro_texto", "label": INTRO_FUERZA_PUBLICA},
         {"type": "end_group", "name": "p1_end"},
     ]
 
-    # P2 Consentimiento
+    # --------------------------------------------------------------------------------------
+    # Página 2: Consentimiento
+    # --------------------------------------------------------------------------------------
     idx_consent = idx_by_name.get("consentimiento", None)
+
     survey_rows.append({"type": "begin_group", "name": "p2_consentimiento", "label": "Consentimiento informado", "appearance": "field-list"})
     survey_rows.append({"type": "note", "name": "cons_title", "label": CONSENTIMIENTO_TITULO})
     for i, txt in enumerate(CONSENTIMIENTO_BLOQUES, start=1):
@@ -797,36 +857,84 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
 
     rel_si = f"${{consentimiento}}='{CONSENT_SI}'"
 
+    # --------------------------------------------------------------------------------------
     # P3 Datos generales
+    # --------------------------------------------------------------------------------------
+    p_datos_generales = {
+        "anos_servicio",
+        "edad_rango",
+        "genero",
+        "escolaridad",
+        "clase_policia",
+        "funcion_principal",
+        "funcion_principal_otro",
+    }
+
     survey_rows.append({
         "type": "begin_group",
         "name": "p3_datos_generales",
-        "label": "Datos generales",
+        "label": TIT_DATOS_GENERALES,
         "appearance": "field-list",
         "relevant": rel_si
     })
     survey_rows.append({
         "type": "note",
         "name": "p3_intro",
-        "label": DATOS_GENERALES_INTRO,
+        "label": INTRO_DATOS_GENERALES,
         "relevant": rel_si
     })
 
     for i, qq in enumerate(preguntas):
-        if qq.get("name") == "consentimiento":
-            continue
-
-        # fuerza relevant = consentimiento Sí
-        if not qq.get("relevant"):
-            qq["relevant"] = rel_si
-        else:
-            qq["relevant"] = f"({rel_si}) and ({qq['relevant']})"
-
-        add_q(qq, i)
+        if qq["name"] in p_datos_generales:
+            add_q(qq, i)
 
     survey_rows.append({"type": "end_group", "name": "p3_datos_generales_end"})
 
+    # --------------------------------------------------------------------------------------
+    # P4 Información de interés policial
+    # --------------------------------------------------------------------------------------
+    p_interes_policial = {
+        "presencia_estructuras",
+        "estructura_nombre_publico",
+        "actividades_delictivas",
+        "actividades_delictivas_otro",
+        "quienes_actos_criminales",
+        "modo_operar_estructura",
+        "zona_mayor_inseguridad",
+        "condiciones_riesgo_zona",
+    }
+
+    survey_rows.append({
+        "type": "begin_group",
+        "name": "p4_interes_policial",
+        "label": TIT_INTERES_POLICIAL,
+        "appearance": "field-list",
+        "relevant": rel_si
+    })
+    survey_rows.append({
+        "type": "note",
+        "name": "p4_intro",
+        "label": INTRO_INTERES_POLICIAL,
+        "relevant": rel_si
+    })
+
+    # Nota previa (como en tus capturas)
+    survey_rows.append({
+        "type": "note",
+        "name": "p4_nota_previa_1",
+        "label": NOTA_PREVIA_CONFIDENCIAL,
+        "relevant": f"{rel_si} and ${{presencia_estructuras}}='{slugify_name('Sí')}'"
+    })
+
+    for i, qq in enumerate(preguntas):
+        if qq["name"] in p_interes_policial:
+            add_q(qq, i)
+
+    survey_rows.append({"type": "end_group", "name": "p4_interes_policial_end"})
+
+    # --------------------------------------------------------------------------------------
     # DataFrames
+    # --------------------------------------------------------------------------------------
     survey_cols_all = set().union(*[r.keys() for r in survey_rows])
     survey_cols = [c for c in [
         "type", "name", "label", "required", "appearance", "choice_filter",
@@ -857,13 +965,10 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     return df_survey, df_choices, df_settings
 
 # ------------------------------------------------------------------------------------------
-# Exportar XLSForm + Vista previa
+# Exportar a XLSForm (Excel) + Vista previa
 # ------------------------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📤 Exportar XLSForm (Survey123)")
-
-# ✅ vuelve a sanitizar antes de construir
-sanitize_state()
 
 df_survey, df_choices, df_settings = construir_xlsform(
     preguntas=st.session_state.preguntas,
@@ -894,8 +999,8 @@ def _to_excel_bytes(df_survey: pd.DataFrame, df_choices: pd.DataFrame, df_settin
 
 xls_bytes = _to_excel_bytes(df_survey, df_choices, df_settings)
 
-safe_deleg = slugify_name(delegacion or "fp")
-file_name = f"xlsform_encuesta_fp_{safe_deleg}.xlsx"
+safe_deleg = slugify_name(delegacion or "delegacion")
+file_name = f"xlsform_encuesta_fuerza_publica_{safe_deleg}.xlsx"
 
 st.download_button(
     "⬇️ Descargar XLSForm (Excel)",
