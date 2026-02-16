@@ -1,928 +1,1065 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
-# App: XLSForm Survey123 — Introducción + Consentimiento + Datos Generales + Interés Policial + Interés Interno
-# - Página 1: Introducción con logo + delegación + texto corto (exacto)
-# - Página 2: Consentimiento Informado ORDENADO (título + párrafos + viñetas + cierre)
-#            + pregunta ¿Acepta participar? (Sí/No)
-#            + Si responde "No" => finaliza (end)
-# - Página 3: Datos generales (según imágenes) + condicionales en pregunta 5 (5.1–5.4)
-# - Página 4: Información de interés policial (según imágenes)
-#            + 6 (Sí/No) y si "Sí" se habilitan 6.1 a 6.4
-#            + 7 y 8 (abiertas)
-# - Página 5: Información de interés interno (según imágenes)
-#            + Condicionales: 10.1 si 10="No"; 11.1 si 11="Sí"; 12.1 si 12 in ("Poco","Nada")
-#                             13.1 si 13="Sí"; 14.1 si 14="Sí"
-#            + 15 opcional (contacto voluntario)
-# - NUEVO: Glosarios por sección (acceso opcional, sin obligar a responder)
-#          * Al final de Página 4 se pregunta si desea ver glosario; si "Sí" aparece grupo glosario.
-#          * Al final de Página 5 se pregunta si desea ver glosario; si "Sí" aparece grupo glosario.
-#          * IMPORTANTE: En el glosario SOLO se permite devolver (Atrás). Para evitar "Siguiente",
-#            el último elemento del glosario es un END condicional que aparece SOLO dentro del glosario.
-#            Así el usuario no puede avanzar desde el glosario hacia el resto de la encuesta.
-# - Exporta XLSForm (Excel) con hojas: survey / choices / settings
+# APP: Generador XLSForm (Survey123) — Encuesta Policial de Percepción Institucional 2026
+# Dirigida a: Fuerza Pública (Costa Rica)
+#
+# Funcionalidades (IGUAL a la app anterior):
+# - Constructor completo: agregar/editar/ordenar/duplicar/eliminar preguntas (survey)
+# - Editor de choices: crear/editar/ordenar/eliminar opciones por list_name
+# - Exportar/Importar proyecto (JSON)
+# - Exportar a XLSForm (Excel) con hojas: survey / choices / settings
+# - Páginas reales en Survey123: settings.style = "pages"
+# - Vista previa por páginas (simulador) con relevant básico
+# - Consentimiento: si marca "No" finaliza y no muestra el resto
+#
+# Nota: Este simulador NO reemplaza Survey123; sirve para validar flujo/estructura.
 # ==========================================================================================
-
-import re
-from io import BytesIO
-from datetime import datetime
 
 import streamlit as st
 import pandas as pd
+import json
+import io
+from datetime import datetime
+import re
+import copy
 
 # ==========================================================================================
-# Configuración
+# CONFIG STREAMLIT
 # ==========================================================================================
-st.set_page_config(page_title="XLSForm Survey123 — (Páginas 1 a 5)", layout="wide")
-st.title("XLSForm Survey123 — Introducción + Consentimiento + Datos + Interés Policial + Interés Interno")
-
-st.markdown("""
-Genera un **XLSForm** listo para **ArcGIS Survey123** con páginas reales (Next/Back):
-- **Página 1**: Introducción (logo + delegación + texto).
-- **Página 2**: Consentimiento Informado (ordenado) + aceptación.
-- **Página 3**: Datos generales (con condicionales en la pregunta 5).
-- **Página 4**: Información de interés policial (condicionales 6.1–6.4 si 6 = “Sí”).
-- **Página 5**: Información de interés interno (condicionales 10.1, 11.1, 12.1, 13.1, 14.1).
-""")
-
-# ==========================================================================================
-# Helpers
-# ==========================================================================================
-def slugify_name(texto: str) -> str:
-    """Convierte texto a un slug válido para XLSForm (name)."""
-    if not texto:
-        return "campo"
-    t = texto.lower()
-    t = re.sub(r"[áàäâ]", "a", t)
-    t = re.sub(r"[éèëê]", "e", t)
-    t = re.sub(r"[íìïî]", "i", t)
-    t = re.sub(r"[óòöô]", "o", t)
-    t = re.sub(r"[úùüû]", "u", t)
-    t = re.sub(r"ñ", "n", t)
-    t = re.sub(r"[^a-z0-9]+", "_", t).strip("_")
-    return t or "campo"
-
-def descargar_xlsform(df_survey, df_choices, df_settings, nombre_archivo: str):
-    """Genera y descarga el XLSForm (Excel)."""
-    buffer = BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        df_survey.to_excel(writer, sheet_name="survey", index=False)
-        df_choices.to_excel(writer, sheet_name="choices", index=False)
-        df_settings.to_excel(writer, sheet_name="settings", index=False)
-
-        wb = writer.book
-        fmt_hdr = wb.add_format({"bold": True, "align": "left"})
-        for sheet, df in (("survey", df_survey), ("choices", df_choices), ("settings", df_settings)):
-            ws = writer.sheets[sheet]
-            ws.freeze_panes(1, 0)
-            ws.set_row(0, None, fmt_hdr)
-            for col_idx, col_name in enumerate(df.columns):
-                ws.set_column(col_idx, col_idx, max(14, min(110, len(str(col_name)) + 10)))
-
-    buffer.seek(0)
-    st.download_button(
-        label=f"📥 Descargar XLSForm ({nombre_archivo})",
-        data=buffer,
-        file_name=nombre_archivo,
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-def add_choice_list(choices_rows, list_name: str, labels: list[str]):
-    """Agrega una lista de choices (list_name/name/label)."""
-    for lab in labels:
-        choices_rows.append({
-            "list_name": list_name,
-            "name": slugify_name(lab),
-            "label": lab
-        })
-
-# ==========================================================================================
-# Inputs (logo + delegación)
-# ==========================================================================================
-DEFAULT_LOGO_PATH = "001.png"
-
-col_logo, col_txt = st.columns([1, 3], vertical_alignment="center")
-
-with col_logo:
-    up_logo = st.file_uploader("Logo (PNG/JPG)", type=["png", "jpg", "jpeg"])
-    if up_logo:
-        st.image(up_logo, caption="Logo cargado", use_container_width=True)
-        st.session_state["_logo_bytes"] = up_logo.getvalue()
-        st.session_state["_logo_name"] = up_logo.name
-    else:
-        try:
-            st.image(DEFAULT_LOGO_PATH, caption="Logo (001.png)", use_container_width=True)
-            st.session_state["_logo_bytes"] = None
-            st.session_state["_logo_name"] = "001.png"
-        except Exception:
-            st.warning("Sube un logo para incluirlo en el XLSForm.")
-            st.session_state["_logo_bytes"] = None
-            st.session_state["_logo_name"] = "logo.png"
-
-with col_txt:
-    delegacion = st.text_input("Nombre de la Delegación", value="San Carlos Oeste")
-    logo_media_name = st.text_input(
-        "Nombre de archivo para `media::image`",
-        value=st.session_state.get("_logo_name", "001.png"),
-        help="Debe coincidir con el archivo dentro de la carpeta `media/` del proyecto Survey123 (Connect)."
-    )
-
-form_title = f"Encuesta Fuerza Pública – Delegación {delegacion.strip()}" if delegacion.strip() else "Encuesta Fuerza Pública"
-st.markdown(f"### {form_title}")
-
-# ==========================================================================================
-# Textos EXACTOS solicitados (P1 y P2)
-# ==========================================================================================
-INTRO_CORTA_EXACTA = (
-    "Esta encuesta busca recopilar información desde la experiencia del personal de la \n"
-    "Fuerza Pública para apoyar la planificación preventiva y la mejora del servicio policial."
+st.set_page_config(
+    page_title="Encuesta Policial 2026 (FP)",
+    page_icon="🚔",
+    layout="wide"
 )
 
-CONSENT_TITLE = "Consentimiento Informado para la Participación en la Encuesta"
-
-CONSENT_PARRAFOS = [
-    "Usted está siendo invitado(a) a participar de forma libre y voluntaria en una encuesta sobre seguridad, convivencia y percepción ciudadana, dirigida a personas mayores de 18 años.",
-    "El objetivo de esta encuesta es recopilar información de carácter preventivo y estadístico, con el fin de apoyar la planificación de acciones de prevención, mejora de la convivencia y fortalecimiento de la seguridad en comunidades y zonas comerciales.",
-    "La participación es totalmente voluntaria. Usted puede negarse a responder cualquier pregunta, así como retirarse de la encuesta en cualquier momento, sin que ello genere consecuencia alguna.",
-    "De conformidad con lo dispuesto en el artículo 5 de la Ley N.º 8968, Ley de Protección de la Persona frente al Tratamiento de sus Datos Personales, se le informa que:"
-]
-
-CONSENT_BULLETS = [
-    "Finalidad del tratamiento: La información recopilada será utilizada exclusivamente para fines estadísticos, analíticos y preventivos, y no para investigaciones penales, procesos judiciales, sanciones administrativas ni procedimientos disciplinarios.",
-    "Datos personales: Algunos apartados permiten, de forma voluntaria, el suministro de datos personales o información de contacto.",
-    "Tratamiento de los datos: Los datos serán almacenados, analizados y resguardados bajo criterios de confidencialidad y seguridad, conforme a la normativa vigente.",
-    "Destinatarios y acceso: La información será conocida únicamente por el personal autorizado de la Fuerza Pública / Ministerio de Seguridad Pública, para los fines indicados. No será cedida a terceros ajenos a estos fines.",
-    "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección de Programas Policiales Preventivos, Oficina Estrategia Integral de Prevención para la Seguridad Pública (EIPSEP / Estrategia Sembremos Seguridad) será el responsable del tratamiento y custodia de la información recolectada.",
-    "Derechos de la persona participante: Usted conserva el derecho a la autodeterminación informativa y a decidir libremente sobre el suministro de sus datos."
-]
-
-CONSENT_CIERRE = [
-    "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales correspondientes.",
-    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar."
-]
+st.title("🚔 Generador XLSForm – Encuesta Policial de Percepción Institucional 2026 (Fuerza Pública)")
 
 # ==========================================================================================
-# Página 4: Interés policial (texto visible que SÍ va en la encuesta)
+# SESSION STATE INIT
 # ==========================================================================================
-P4_INTRO_TITULO = "Información de interés policial"
-P4_INTRO_TEXTO = (
-    "En este apartado, el objetivo principal es comprender las estructuras criminales y las "
-    "problemáticas de interés policial presentes en la jurisdicción de la delegación. A través "
-    "de esto se busca obtener una visión clara de la naturaleza y dinámicas de las organizaciones "
-    "criminales en la zona."
-)
+def _init_state():
+    if "survey" not in st.session_state:
+        st.session_state.survey = []
+    if "choices" not in st.session_state:
+        st.session_state.choices = []
+    if "settings" not in st.session_state:
+        st.session_state.settings = {
+            "form_title": "Encuesta Policial de Percepción Institucional 2026",
+            "form_id": "encuesta_policial_2026_fp",
+            "version": datetime.now().strftime("%Y%m%d"),
+        }
 
-NOTA_PREVIA_CONFIDENCIAL = (
-    "La información solicitada en los siguientes apartados es de carácter "
-    "confidencial, para uso institucional y análisis preventivo. No constituye denuncia formal."
-)
+    # Para vista previa
+    if "preview_page_idx" not in st.session_state:
+        st.session_state.preview_page_idx = 0
+    if "preview_answers" not in st.session_state:
+        st.session_state.preview_answers = {}
 
-# ==========================================================================================
-# Página 5: Interés interno (NOTAS que sí van en encuesta se ponen como hint o note)
-# ==========================================================================================
-HINT_ABIERTA_GENERAL = "Respuesta abierta para que la persona encuestada pueda agregar la información adecuada."
-HINT_ABIERTA_SIMPLE = "Respuesta abierta."
-HINT_CONFIDENCIAL_INSTITUCIONAL = "La información suministrada es confidencial y de uso institucional."
-HINT_ANALISIS_PREVENTIVO = (
-    "Esta información será utilizada exclusivamente para análisis preventivo institucional "
-    "y no sustituye los mecanismos formales de denuncia."
-)
+_init_state()
 
 # ==========================================================================================
-# Glosarios (TEXTOS COMPLETOS, SIN ACORTAR)
+# HELPERS
 # ==========================================================================================
-GLOS_P4_ITEMS = [
-    (
-        "Bunker (eje de expendio de drogas)",
-        "tipo de construcción destinada a servir de refugio a consumidores de droga y a su vez es un expendio de drogas y armas."
-    ),
-    (
-        "Extorsión",
-        "el que para procurar un lucro injusto obligare a otro con intimidación o amenaza a realizar u omitir un acto o negocio jurídico con intención patrimonial perjudicial para sí mismo o para un tercero."
-    ),
-    (
-        "Hurto",
-        "quien se apoderare ilegítimamente de una cosa mueble, total o parcialmente ajena, esto en aprovechamiento del descuido."
-    ),
-    (
-        "Receptación",
-        "quien adquiriere, recibiera y ocultare dinero, cosas o bienes provenientes de un delito o interviniere en su adquisición, recepción u ocultación."
-    ),
-    (
-        "Contrabando",
-        "quien introduzca o extraiga, transporte, almacene, adquiera, venda o tenga en su poder mercadería de procedencia introducida al país, eludiendo el control aduanero."
-    ),
-    (
-        "Delitos sexuales",
-        "atentar contra la libre elección sexual, contra su pudor, dentro de estos se incluyen los delitos de violación, abusos deshonestos y acoso sexual."
-    ),
-    (
-        "Daños/vandalismo",
-        "quien destruyere, inutilizare, hiciere desaparecer, o de cualquier modo dañare cosas o bienes, incluyendo bienes del Estado, contra persona física o jurídica."
-    ),
-    (
-        "Estafa o defraudación",
-        "quien induciendo a error a otra persona o manteniéndola en él, mediante ardid o engaño, para sí o para un tercero, lesione el patrimonio ajeno."
-    ),
-    (
-        "Fraude informático",
-        "persona que, con la intención de procurar u obtener un beneficio para sí o para un tercero, influya en el resultado de un procesamiento de datos mediante la manipulación de datos, la alteración de programas o cualquier otra acción que incida en el proceso de los datos del sistema."
-    ),
-    (
-        "Alteración de datos y sabotaje informático",
-        "quien por cualquier medio accede, borre, suprima, modifique o inutilice sin autorización los datos registrados en una computadora, sistema o soporte informático, afectando su integridad, disponibilidad o funcionamiento."
-    ),
-    (
-        "Tráfico ilegal de personas",
-        "conducir o transportar a personas para su ingreso al país o salida del mismo por lugares no autorizados, o facilitar el ingreso o permanencia ilegal de personas extranjeras que ingresen al país o permanezcan ilegalmente en él."
-    ),
-    (
-        "Robo a edificación (tacha)",
-        "quien mediante el desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en una edificación, o en sus dependencias, o en un local, y sustrajere alguna cosa mueble total o parcialmente ajena."
-    ),
-    (
-        "Robo a vivienda (tacha)",
-        "quien mediante el desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en una vivienda o sus dependencias y sustrajere alguna cosa mueble total o parcialmente ajena."
-    ),
-    (
-        "Robo a vivienda (intimidación)",
-        "quien en una vivienda ajena ejecutare el apoderamiento de una cosa mueble total o parcialmente ajena mediante violencia o intimidación sobre las personas, sea para cometer el robo o para conservar su seguridad propia o de terceros, en el lugar del hecho o después."
-    ),
-    (
-        "Robo a comercio (tacha)",
-        "quien mediante desprendimiento, ruptura, destrucción o forzamiento de cerraduras, ventanas, puertas u otros medios, entrare en un local comercial o sus dependencias y sustrajere alguna cosa mueble total o parcialmente ajena."
-    ),
-    (
-        "Robo a comercio (intimidación)",
-        "apoderamiento de cosa mueble total o parcialmente ajena, mediante violencia o intimidación sobre las personas, sea para cometer el robo o para huir."
-    ),
-    (
-        "Robo de vehículos",
-        "apoderamiento o sustracción de un vehículo automotor de forma ilegítima con el fin de obtener un beneficio propio."
-    ),
-    (
-        "Robo a vehículos (tacha)",
-        "quien mediante la apertura sin autorización de un vehículo o destruyendo o forzando sus mecanismos de acceso, sustrajere alguna cosa mueble total o parcialmente ajena que se encuentre en el interior."
-    ),
-    (
-        "Robo de motocicletas/vehículos (bajonazo)",
-        "apoderamiento de un vehículo o motocicleta por medio de violencia o intimidación a la víctima."
+def _slug(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = re.sub(r"[^\w\s-]", "", s, flags=re.UNICODE)
+    s = re.sub(r"\s+", "_", s)
+    s = re.sub(r"_+", "_", s)
+    return s[:50] if s else "campo"
+
+def add_survey_row(
+    qtype: str,
+    name: str,
+    label: str,
+    hint: str = "",
+    required: str = "",
+    relevant: str = "",
+    appearance: str = "",
+    calculation: str = "",
+    constraint: str = "",
+    constraint_message: str = "",
+):
+    st.session_state.survey.append({
+        "type": qtype,
+        "name": name,
+        "label": label,
+        "hint": hint,
+        "required": required,
+        "relevant": relevant,
+        "appearance": appearance,
+        "calculation": calculation,
+        "constraint": constraint,
+        "constraint_message": constraint_message,
+    })
+
+def add_choice(list_name: str, name: str, label: str):
+    st.session_state.choices.append({
+        "list_name": list_name,
+        "name": name,
+        "label": label,
+    })
+
+def ensure_choice_list(list_name: str, items: list):
+    """
+    items: list of tuples (name, label)
+    """
+    existing = {(c.get("list_name"), c.get("name")) for c in st.session_state.choices}
+    for n, lab in items:
+        if (list_name, n) not in existing:
+            add_choice(list_name, n, lab)
+
+def safe_unique_name(base: str, existing_names: set):
+    base = _slug(base)
+    if base not in existing_names:
+        return base
+    i = 2
+    while f"{base}_{i}" in existing_names:
+        i += 1
+    return f"{base}_{i}"
+
+def move_item(lst, idx, direction):
+    new_idx = idx + direction
+    if 0 <= idx < len(lst) and 0 <= new_idx < len(lst):
+        lst[idx], lst[new_idx] = lst[new_idx], lst[idx]
+        return True
+    return False
+
+def delete_item(lst, idx):
+    if 0 <= idx < len(lst):
+        lst.pop(idx)
+        return True
+    return False
+
+def duplicate_item(lst, idx):
+    if 0 <= idx < len(lst):
+        lst.insert(idx + 1, copy.deepcopy(lst[idx]))
+        return True
+    return False
+
+def get_choice_lists():
+    dfc = pd.DataFrame(st.session_state.choices)
+    if dfc.empty:
+        return []
+    return sorted(dfc["list_name"].unique().tolist())
+
+def get_choices_for_list(list_name: str):
+    return [c for c in st.session_state.choices if c.get("list_name") == list_name]
+
+def set_choices_for_list(list_name: str, new_items: list):
+    st.session_state.choices = [c for c in st.session_state.choices if c.get("list_name") != list_name]
+    st.session_state.choices.extend(new_items)
+
+# ==========================================================================================
+# BASE DEL FORMULARIO (SE CARGA SOLO SI SURVEY ESTÁ VACÍO)
+# ==========================================================================================
+def ensure_base_policial_fp():
+    if st.session_state.survey:
+        return
+
+    # Choices base
+    ensure_choice_list("yesno", [
+        ("yes", "Sí"),
+        ("no", "No"),
+    ])
+
+    ensure_choice_list("age_rango", [
+        ("r18_29", "18 a 29 años"),
+        ("r30_44", "30 a 44 años"),
+        ("r45_59", "45 a 59 años"),
+        ("r60_mas", "60 años o más"),
+    ])
+
+    ensure_choice_list("gender_id", [
+        ("f", "Femenino"),
+        ("m", "Masculino"),
+        ("nb", "Persona No Binaria"),
+        ("nd", "Prefiero no decir"),
+    ])
+
+    ensure_choice_list("edu", [
+        ("ninguna", "Ninguna"),
+        ("prim_incomp", "Primaria incompleta"),
+        ("prim_comp", "Primaria completa"),
+        ("sec_incomp", "Secundaria incompleta"),
+        ("sec_comp", "Secundaria completa"),
+        ("tecnico", "Técnico"),
+        ("uni_incomp", "Universitaria incompleta"),
+        ("uni_comp", "Universitaria completa"),
+    ])
+
+    ensure_choice_list("clase_policial", [
+        ("agente_i", "Agente I"),
+        ("agente_ii", "Agente II"),
+        ("subof_i", "Suboficial I"),
+        ("subof_ii", "Suboficial II"),
+        ("oficial_i", "Oficial I"),
+        ("jefe_subdel", "Jefe Sub delegación (distrito)"),
+        ("sub_jefe", "Sub Jefe de delegación"),
+        ("jefe_del", "Jefe de delegación"),
+    ])
+
+    ensure_choice_list("funcion_principal", [
+        ("jefatura", "Jefatura / supervisión"),
+        ("operaciones", "Operaciones"),
+        ("programas_prev", "Programas preventivos"),
+        ("oficial_guardia", "Oficial de guardia"),
+        ("comunicaciones", "Comunicaciones"),
+        ("armeria", "Armería"),
+        ("conduccion", "Conducción operativa de vehículos oficiales"),
+        ("patrullaje", "Operativa / patrullaje"),
+        ("fronteras", "Fronteras"),
+        ("seg_turistica", "Seguridad turística"),
+        ("other", "Otra función"),
+    ])
+
+    # -------------------------
+    # PÁGINA 1: INTRO (EXACTA)
+    # -------------------------
+    intro = (
+        "El presente formato corresponde a la Encuesta Policial de Percepción Institucional 2026, dirigida al "
+        "personal de la Fuerza Pública, y orientada a recopilar información relevante desde la experiencia "
+        "operativa y territorial del funcionariado policial, en relación con la seguridad, la convivencia y los "
+        "factores de riesgo presentes en las distintas jurisdicciones del país.\n\n"
+        "El instrumento incorpora la percepción del personal sobre condiciones institucionales que inciden en la "
+        "prestación del servicio policial, tales como el entorno operativo de la delegación, la disponibilidad de "
+        "recursos, las necesidades de capacitación y el entorno institucional que favorece la motivación para la "
+        "atención a la ciudadanía.\n\n"
+        "La información recopilada servirá como insumo para el análisis institucional, la planificación preventiva "
+        "y la mejora continua del servicio policial.\n\n"
+        "El documento se remite para su revisión y validación técnica, con el fin de asegurar su coherencia "
+        "metodológica, normativa y operativa, previo a su aplicación en territorio."
     )
-]
 
-GLOS_P5_ITEMS = [
-    (
-        "Falta de capacitación policial",
-        "deficiencia en la capacitación, doctrina policial, actualización jurídica, polígono y procedimientos policiales."
-    ),
-    (
-        "Corrupción policial",
-        "consiste en el uso indebido de sus atribuciones, recursos o influencias, para beneficio propio o de terceros, incluyendo ascensos, sanciones evitadas, ventajas económicas o avances en la carrera profesional e incluso fines políticos."
-    ),
-    (
-        "Inadecuado uso del recurso policial",
-        "deficiente uso de los recursos que se tienen en una delegación policial para un eficiente servicio."
-    ),
-    (
-        "Inefectividad en el servicio de policía",
-        "baja respuesta por parte de fuerza pública ante cualquier incidencia, derivado de muchos factores que son relevantes."
-    ),
-    (
-        "Necesidades básicas insatisfechas",
-        "carencias críticas en las personas para vivir de forma adecuada, como alimentación, vivienda, educación básica, ingreso mínimo, servicios públicos esenciales."
+    add_survey_row("begin_group", "p1_intro", "Introducción", appearance="field-list")
+    add_survey_row("note", "p1_intro_txt", intro)
+    add_survey_row("end_group", "p1_intro_end", "")
+
+    # -------------------------
+    # PÁGINA 2: CONSENTIMIENTO (MISMA LÓGICA)
+    # -------------------------
+    add_survey_row("begin_group", "p2_consent", "Consentimiento informado", appearance="field-list")
+    add_survey_row(
+        "note",
+        "p2_consent_txt",
+        "La participación en esta encuesta es voluntaria. La información recopilada será utilizada exclusivamente "
+        "para fines institucionales y de mejora del servicio policial. No se recopilarán datos personales que permitan "
+        "la identificación directa de la persona encuestada."
     )
-]
+    add_survey_row(
+        "select_one yesno",
+        "consent",
+        "¿Acepta participar en la encuesta?",
+        required="yes"
+    )
+    add_survey_row(
+        "note",
+        "p2_no_consent_end",
+        "Gracias. Al no brindar su consentimiento, la encuesta finaliza aquí.",
+        relevant="${consent}='no'"
+    )
+    add_survey_row("end_group", "p2_consent_end", "")
+
+    # -------------------------
+    # PÁGINA 3: DATOS GENERALES (TÍTULO + INTRO EXACTA)
+    # -------------------------
+    add_survey_row("begin_group", "p3_datos_generales", "Datos generales", appearance="field-list")
+    add_survey_row(
+        "note",
+        "p3_datos_intro",
+        "Datos generales\n\n“Esta encuesta busca recopilar información desde la experiencia del personal de la Fuerza Pública para apoyar la planificación preventiva y la mejora del servicio policial.”",
+        relevant="${consent}='yes'"
+    )
+
+    add_survey_row(
+        "integer",
+        "anos_servicio",
+        "1- Años de servicio:",
+        hint="Nota: Indique únicamente la cantidad de años completos de servicio (en números). Asignar en la herramienta un formato de 0 a 50 años.",
+        required="yes",
+        relevant="${consent}='yes'",
+        constraint=". >= 0 and . <= 50",
+        constraint_message="Debe ingresar un número entre 0 y 50."
+    )
+
+    add_survey_row(
+        "select_one age_rango",
+        "edad_rango",
+        "2- Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
+        hint="Nota: Esta pregunta se responde mediante rangos de edad.",
+        required="yes",
+        relevant="${consent}='yes'"
+    )
+
+    add_survey_row(
+        "select_one gender_id",
+        "identidad_genero",
+        "3- ¿Con cuál de estas opciones se identifica?",
+        hint="Nota: La respuesta es de selección única.",
+        required="yes",
+        relevant="${consent}='yes'"
+    )
+
+    add_survey_row(
+        "select_one edu",
+        "escolaridad",
+        "4- Escolaridad:",
+        hint="Nota: La respuesta es de selección única.",
+        required="yes",
+        relevant="${consent}='yes'"
+    )
+
+    add_survey_row(
+        "select_one clase_policial",
+        "clase_policial_actual",
+        "5- ¿Cuál es su clase policial que desempeña en su delegación?",
+        hint="Nota: Selección única.",
+        required="yes",
+        relevant="${consent}='yes'"
+    )
+
+    add_survey_row(
+        "select_one funcion_principal",
+        "funcion_principal_actual",
+        "5.1- ¿Cuál es la función principal que desempeña actualmente en la delegación?",
+        hint="Nota: Selección única.",
+        required="yes",
+        relevant="${consent}='yes'",
+        appearance="or_other"
+    )
+
+    add_survey_row("end_group", "p3_datos_generales_end", "")
+
+ensure_base_policial_fp()
 
 # ==========================================================================================
-# Construcción XLSForm
-# ==========================================================================================
-def construir_xlsform(form_title: str, logo_media_name: str, idioma: str, version: str):
-    survey_rows = []
-    choices_rows = []
-
-    # =========================
-    # Choices (listas)
-    # =========================
-    list_yesno = "yesno"
-    v_si = slugify_name("Sí")
-    v_no = slugify_name("No")
-    add_choice_list(choices_rows, list_yesno, ["Sí", "No"])
-
-    list_edad = "edad_rangos"
-    add_choice_list(choices_rows, list_edad, ["18 a 29 años", "30 a 44 años", "45 a 59 años", "60 años o más"])
-
-    list_genero = "genero"
-    add_choice_list(choices_rows, list_genero, ["Femenino", "Masculino", "Persona No Binaria", "Prefiero no decir"])
-
-    list_escolaridad = "escolaridad"
-    add_choice_list(choices_rows, list_escolaridad, [
-        "Ninguna",
-        "Primaria incompleta",
-        "Primaria completa",
-        "Secundaria incompleta",
-        "Secundaria completa",
-        "Técnico",
-        "Universitaria incompleta",
-        "Universitaria completa",
-    ])
-
-    list_clase = "clase_policial"
-    add_choice_list(choices_rows, list_clase, [
-        "Agente I",
-        "Agente II",
-        "Suboficial I",
-        "Suboficial II",
-        "Oficial I",
-        "Sub Jefe de delegación",
-        "Jefe de delegación",
-    ])
-
-    list_agente_ii = "agente_ii_det"
-    add_choice_list(choices_rows, list_agente_ii, [
-        "Agente de Fronteras",
-        "Agente de Programa Preventivo",
-        "Agente Armero",
-        "Agente Conductor Operacional de Vehículos Oficiales",
-        "Agente de Seguridad Turística",
-        "Agente de Comunicaciones",
-        "Agente de Operaciones",
-    ])
-
-    list_subof_i = "suboficial_i_det"
-    add_choice_list(choices_rows, list_subof_i, [
-        "Encargado Equipo Operativo Policial",
-        "Encargado Equipo de Seguridad Turística",
-        "Encargado Equipo de Fronteras",
-        "Encargado Equipo de Comunicaciones",
-        "Encargado de Programas Preventivos",
-        "Encargado Agentes Armeros",
-    ])
-
-    list_subof_ii = "suboficial_ii_det"
-    add_choice_list(choices_rows, list_subof_ii, [
-        "Encargado Subgrupo Operativo Policial",
-        "Encargado Subgrupo de Seguridad Turística",
-        "Encargado Subgrupo de Fronteras",
-        "Oficial de Guardia",
-        "Encargado de Operaciones",
-    ])
-
-    list_of_i = "oficial_i_det"
-    add_choice_list(choices_rows, list_of_i, [
-        "Jefe Delegación Distrital",
-        "Encargado Grupo Operativo Policial",
-    ])
-
-    # Página 4 - Actividad delictiva (6.1)
-    list_actividad_delictiva = "actividad_delictiva"
-    actividad_opts = [
-        "Punto de Venta y distribución de Drogas. Búnker (espacio cerrado para la venta y distribución de drogas).",
-        "Delitos contra la vida (Homicidios, heridos, femicidios).",
-        "Venta y consumo de drogas en vía pública.",
-        "Delitos sexuales",
-        "Asalto (a personas, comercio, vivienda, transporte público).",
-        "Daños a la propiedad. (Destruir, inutilizar o desaparecer).",
-        "Estafas (Billetes, documentos, oro, lotería falsos).",
-        "Estafa Informática (computadora, tarjetas, teléfonos, etc.).",
-        "Extorsión (intimidar o amenazar a otras personas con fines de lucro).",
-        "Hurto.",
-        "Receptación (persona que adquiere, recibe u oculta artículos provenientes de un delito en el que no participó).",
-        "Robo a edificaciones.",
-        "Robo a vivienda.",
-        "Robo de ganado y agrícola.",
-        "Robo a comercio",
-        "Robo de vehículos.",
-        "Tacha de vehículos.",
-        "Contrabando (licor, cigarrillos, medicinas, ropa, calzado, etc.)",
-        "Tráfico de personas (coyotaje)",
-        "Otro"
-    ]
-    add_choice_list(choices_rows, list_actividad_delictiva, actividad_opts)
-
-    # Página 5 - Motivación (12)
-    list_motivacion = "motivacion"
-    motivacion_opts = ["Mucho", "Algo", "Poco", "Nada"]
-    add_choice_list(choices_rows, list_motivacion, motivacion_opts)
-
-    # =========================
-    # Página 1: Introducción (SIN "Portada")
-    # =========================
-    survey_rows.append({"type": "begin_group", "name": "p1_intro", "label": "Introducción", "appearance": "field-list"})
-    survey_rows.append({"type": "note", "name": "p1_logo", "label": form_title, "media::image": logo_media_name})
-    survey_rows.append({"type": "note", "name": "p1_texto", "label": INTRO_CORTA_EXACTA})
-    survey_rows.append({"type": "end_group", "name": "p1_end"})
-
-    # =========================
-    # Página 2: Consentimiento (ORDENADO)
-    # =========================
-    survey_rows.append({"type": "begin_group", "name": "p2_consent", "label": "Consentimiento Informado", "appearance": "field-list"})
-    survey_rows.append({"type": "note", "name": "p2_titulo", "label": CONSENT_TITLE})
-
-    for i, p in enumerate(CONSENT_PARRAFOS, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_p_{i}", "label": p})
-
-    for j, b in enumerate(CONSENT_BULLETS, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_b_{j}", "label": f"• {b}"})
-
-    for k, c in enumerate(CONSENT_CIERRE, start=1):
-        survey_rows.append({"type": "note", "name": f"p2_c_{k}", "label": c})
-
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "acepta_participar",
-        "label": "¿Acepta participar en esta encuesta?",
-        "required": "yes",
-        "appearance": "minimal"
-    })
-    survey_rows.append({"type": "end_group", "name": "p2_end"})
-
-    # Finalizar si NO acepta
-    survey_rows.append({
-        "type": "end",
-        "name": "fin_por_no",
-        "label": "Gracias. Usted indicó que no acepta participar en esta encuesta.",
-        "relevant": f"${{acepta_participar}}='{v_no}'"
-    })
-
-    # =========================
-    # Relevante base: solo si acepta SÍ
-    # =========================
-    rel_si = f"${{acepta_participar}}='{v_si}'"
-
-    # =========================
-    # Página 3: Datos generales
-    # =========================
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p3_datos_generales",
-        "label": "Datos generales",
-        "appearance": "field-list",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({
-        "type": "integer",
-        "name": "anos_servicio",
-        "label": "1- Años de servicio:",
-        "required": "yes",
-        "constraint": ". >= 0 and . <= 50",
-        "constraint_message": "Debe ser un número entre 0 y 50.",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_edad}",
-        "name": "edad_rango",
-        "label": "2- Edad.",
-        "required": "yes",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_genero}",
-        "name": "genero",
-        "label": "3- ¿Con cuál de estas opciones se identifica?",
-        "required": "yes",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_escolaridad}",
-        "name": "escolaridad",
-        "label": "4- Escolaridad:",
-        "required": "yes",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_clase}",
-        "name": "clase_policial",
-        "label": "5- ¿Qué clase policial desempeña en su delegación?",
-        "required": "yes",
-        "relevant": rel_si
-    })
-
-    rel_agente_ii = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Agente II')}')"
-    rel_subof_i   = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Suboficial I')}')"
-    rel_subof_ii  = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Suboficial II')}')"
-    rel_of_i      = f"({rel_si}) and (${{clase_policial}}='{slugify_name('Oficial I')}')"
-
-    survey_rows.append({
-        "type": f"select_one {list_agente_ii}",
-        "name": "agente_ii",
-        "label": "5.1- Agente II",
-        "required": "yes",
-        "relevant": rel_agente_ii
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_subof_i}",
-        "name": "suboficial_i",
-        "label": "5.2- Suboficial I",
-        "required": "yes",
-        "relevant": rel_subof_i
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_subof_ii}",
-        "name": "suboficial_ii",
-        "label": "5.3- Suboficial II",
-        "required": "yes",
-        "relevant": rel_subof_ii
-    })
-
-    survey_rows.append({
-        "type": f"select_one {list_of_i}",
-        "name": "oficial_i",
-        "label": "5.4 Oficial I",
-        "required": "yes",
-        "relevant": rel_of_i
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p3_end"})
-
-    # =========================
-    # Página 4: Interés policial
-    # =========================
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p4_interes_policial",
-        "label": P4_INTRO_TITULO,
-        "appearance": "field-list",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({"type": "note", "name": "p4_intro", "label": P4_INTRO_TEXTO, "relevant": rel_si})
-
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "conocimiento_estructuras",
-        "label": "6- ¿Cuenta usted con conocimiento operativo sobre personas, grupos u organizaciones que desarrollen actividades ilícitas en su jurisdicción?",
-        "required": "yes",
-        "appearance": "minimal",
-        "relevant": rel_si
-    })
-
-    rel_6_si = f"({rel_si}) and (${{conocimiento_estructuras}}='{v_si}')"
-
-    survey_rows.append({
-        "type": f"select_multiple {list_actividad_delictiva}",
-        "name": "tipo_actividad_delictiva",
-        "label": "6.1 ¿Qué tipo de actividad delictiva es la que se realiza por parte de estas personas?",
-        "required": "yes",
-        "relevant": rel_6_si
-    })
-
-    survey_rows.append({
-        "type": "note",
-        "name": "p4_nota_previa_634",
-        "label": NOTA_PREVIA_CONFIDENCIAL,
-        "relevant": rel_6_si
-    })
-
-    survey_rows.append({
-        "type": "text",
-        "name": "nombre_estructura_criminal",
-        "label": "6.2 ¿Cuál es el nombre de la estructura criminal?",
-        "required": "yes",
-        "relevant": rel_6_si
-    })
-
-    survey_rows.append({
-        "type": "text",
-        "name": "quienes_actos_criminales",
-        "label": "6.3- Indique quién o quiénes se dedican a estos actos criminales. (nombres, apellidos, alias, domicilio)",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_6_si
-    })
-
-    survey_rows.append({
-        "type": "text",
-        "name": "modo_operar_estructura",
-        "label": "6.4 Modo de operar de esta estructura criminal (por ejemplo: venta de droga exprés o en vía pública, asalto a mano armada, modo de desplazamiento, etc.)",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_6_si
-    })
-
-    survey_rows.append({
-        "type": "text",
-        "name": "zona_mayor_inseguridad",
-        "label": "7- Indique el lugar, sector o zona que, según su criterio operativo, presenta mayores condiciones de inseguridad dentro de su área de responsabilidad.",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({
-        "type": "text",
-        "name": "condiciones_riesgo_zona",
-        "label": "8- Describa las principales situaciones o condiciones de riesgo que inciden en la inseguridad de esa zona.",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_si
-    })
-
-    # Acceso opcional a Glosario (NO obligatorio)
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "ver_glosario_p4",
-        "label": "¿Desea acceder al glosario de esta sección?",
-        "required": "no",
-        "appearance": "minimal",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p4_end"})
-
-    # Página 4.5: Glosario Interés policial (condicional si responde Sí)
-    rel_glos_p4 = f"({rel_si}) and (${{ver_glosario_p4}}='{v_si}')"
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p4_5_glosario",
-        "label": "Glosario — Información de interés policial",
-        "appearance": "field-list",
-        "relevant": rel_glos_p4
-    })
-
-    survey_rows.append({
-        "type": "note",
-        "name": "p4_5_glosario_info",
-        "label": "Para volver a la sección anterior, utilice el botón “Atrás”.",
-        "relevant": rel_glos_p4
-    })
-
-    for i, (term, defin) in enumerate(GLOS_P4_ITEMS, start=1):
-        survey_rows.append({
-            "type": "note",
-            "name": f"p4_5_term_{i}",
-            "label": f"{term}: {defin}",
-            "relevant": rel_glos_p4
-        })
-
-    # END SOLO en glosario: evita que el usuario avance desde glosario
-    survey_rows.append({
-        "type": "end",
-        "name": "fin_en_glosario_p4",
-        "label": "Fin del glosario. Use “Atrás” para regresar a la sección anterior y continuar con la encuesta.",
-        "relevant": rel_glos_p4
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p4_5_end"})
-
-    # =========================
-    # Página 5: Interés interno
-    # =========================
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p5_interes_interno",
-        "label": "Información de interés interno",
-        "appearance": "field-list",
-        "relevant": rel_si
-    })
-
-    # 9
-    survey_rows.append({
-        "type": "text",
-        "name": "recursos_necesarios",
-        "label": "9- Desde su experiencia operativa, indique qué recursos considera necesarios para fortalecer la labor policial en su delegación.",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_si
-    })
-
-    # 10
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "condiciones_necesidades_basicas",
-        "label": "10- ¿Considera que las condiciones actuales de su delegación permiten cubrir adecuadamente sus necesidades básicas para el servicio (descanso, alimentación, recurso móvil, entre otros)?",
-        "required": "yes",
-        "appearance": "minimal",
-        "relevant": rel_si
-    })
-    rel_10_no = f"({rel_si}) and (${{condiciones_necesidades_basicas}}='{v_no}')"
-
-    # 10.1
-    survey_rows.append({
-        "type": "text",
-        "name": "condiciones_mejorar",
-        "label": "10.1- Cuáles condiciones considera que se pueden mejorar.",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_10_no
-    })
-
-    # 11
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "falta_capacitacion",
-        "label": "11- ¿Considera usted que hace falta capacitación para el personal en su delegación policial?",
-        "required": "yes",
-        "appearance": "minimal",
-        "relevant": rel_si
-    })
-    rel_11_si = f"({rel_si}) and (${{falta_capacitacion}}='{v_si}')"
-
-    # 11.1
-    survey_rows.append({
-        "type": "text",
-        "name": "areas_capacitacion",
-        "label": "11.1 Especifique en qué áreas necesita capacitación.",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_11_si
-    })
-
-    # 12
-    survey_rows.append({
-        "type": f"select_one {list_motivacion}",
-        "name": "motivacion_medida",
-        "label": "12- ¿En qué medida considera que la institución genera un entorno que favorece su motivación para la atención a la ciudadanía?",
-        "required": "yes",
-        "appearance": "minimal",
-        "relevant": rel_si
-    })
-    rel_12_poco_nada = f"({rel_si}) and (${{motivacion_medida}}='{slugify_name('Poco')}' or ${{motivacion_medida}}='{slugify_name('Nada')}')"
-
-    # 12.1
-    survey_rows.append({
-        "type": "text",
-        "name": "motivo_motivacion_baja",
-        "label": "12.1 De manera general, indique por qué lo considera así.",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_12_poco_nada
-    })
-
-    # 13
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "situaciones_internas_afectan",
-        "label": "13- ¿Tiene usted conocimiento de situaciones internas que, según su criterio, afectan el adecuado funcionamiento operativo o el servicio a la ciudadanía en su delegación?",
-        "required": "yes",
-        "appearance": "minimal",
-        "hint": HINT_CONFIDENCIAL_INSTITUCIONAL,
-        "relevant": rel_si
-    })
-    rel_13_si = f"({rel_si}) and (${{situaciones_internas_afectan}}='{v_si}')"
-
-    # 13.1
-    survey_rows.append({
-        "type": "text",
-        "name": "describe_situaciones_internas",
-        "label": "13.1 Describa, de manera general, las situaciones a las que se refiere, relacionadas con aspectos operativos, administrativos o de servicio.",
-        "required": "yes",
-        "appearance": "multiline",
-        "hint": "Información confidencial.",
-        "relevant": rel_13_si
-    })
-
-    # 14
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "conoce_oficiales_relacionados",
-        "label": "14- ¿Conoce oficiales de Fuerza Pública que se relacionen con alguna estructura criminal o cometan algún delito?",
-        "required": "yes",
-        "appearance": "minimal",
-        "hint": HINT_ANALISIS_PREVENTIVO,
-        "relevant": rel_si
-    })
-    rel_14_si = f"({rel_si}) and (${{conoce_oficiales_relacionados}}='{v_si}')"
-
-    # 14.1
-    survey_rows.append({
-        "type": "text",
-        "name": "describe_situacion_oficiales",
-        "label": "14.1 Describa la situación de la cual tiene conocimiento. (aporte nombre de la estructura, tipo de actividad, nombre de oficiales, función del oficial dentro de la organización, alias, etc.)",
-        "required": "yes",
-        "appearance": "multiline",
-        "relevant": rel_14_si
-    })
-
-    # 15 (voluntaria)
-    survey_rows.append({
-        "type": "text",
-        "name": "medio_contacto_voluntario",
-        "label": "15- Desea, de manera voluntaria, dejar un medio de contacto para brindar más información (correo electrónico, número de teléfono, etc.)",
-        "required": False,
-        "appearance": "multiline",
-        "relevant": rel_si
-    })
-
-    # Acceso opcional a Glosario (NO obligatorio)
-    survey_rows.append({
-        "type": f"select_one {list_yesno}",
-        "name": "ver_glosario_p5",
-        "label": "¿Desea acceder al glosario de esta sección?",
-        "required": "no",
-        "appearance": "minimal",
-        "relevant": rel_si
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p5_end"})
-
-    # Página 5.5: Glosario Interés interno (condicional si responde Sí)
-    rel_glos_p5 = f"({rel_si}) and (${{ver_glosario_p5}}='{v_si}')"
-    survey_rows.append({
-        "type": "begin_group",
-        "name": "p5_5_glosario",
-        "label": "Glosario — Información de interés interno",
-        "appearance": "field-list",
-        "relevant": rel_glos_p5
-    })
-
-    survey_rows.append({
-        "type": "note",
-        "name": "p5_5_glosario_info",
-        "label": "Para volver a la sección anterior, utilice el botón “Atrás”.",
-        "relevant": rel_glos_p5
-    })
-
-    for i, (term, defin) in enumerate(GLOS_P5_ITEMS, start=1):
-        survey_rows.append({
-            "type": "note",
-            "name": f"p5_5_term_{i}",
-            "label": f"{term}: {defin}",
-            "relevant": rel_glos_p5
-        })
-
-    # END SOLO en glosario: evita que el usuario avance desde glosario
-    survey_rows.append({
-        "type": "end",
-        "name": "fin_en_glosario_p5",
-        "label": "Fin del glosario. Use “Atrás” para regresar a la sección anterior y continuar con la encuesta.",
-        "relevant": rel_glos_p5
-    })
-
-    survey_rows.append({"type": "end_group", "name": "p5_5_end"})
-
-    # =========================
-    # DataFrames
-    # =========================
-    survey_cols = [
-        "type", "name", "label", "required", "appearance",
-        "relevant", "media::image", "constraint", "constraint_message", "hint"
-    ]
-    df_survey = pd.DataFrame(survey_rows, columns=survey_cols).fillna("")
-    df_choices = pd.DataFrame(choices_rows, columns=["list_name", "name", "label"]).fillna("")
-    df_settings = pd.DataFrame([{
-        "form_title": form_title,
-        "version": version,
-        "default_language": idioma,
-        "style": "pages"
-    }], columns=["form_title", "version", "default_language", "style"]).fillna("")
-
-    return df_survey, df_choices, df_settings
-
-# ==========================================================================================
-# Exportar
+# UI: VISTAS PRINCIPALES
 # ==========================================================================================
 st.markdown("---")
-st.subheader("📦 Generar XLSForm (Survey123)")
+menu = st.radio(
+    "📌 Navegación",
+    ["📄 Formulario", "🧩 Constructor / Editor", "💾 Proyecto (JSON)", "📤 Exportar XLSForm", "👁️ Vista previa"],
+    horizontal=True
+)
 
-idioma = st.selectbox("Idioma (default_language)", options=["es", "en"], index=0)
-version_auto = datetime.now().strftime("%Y%m%d%H%M")
-version = st.text_input("Versión (settings.version)", value=version_auto)
+# ==========================================================================================
+# VISTA 1: FORMULARIO (texto fijo visible)
+# ==========================================================================================
+if menu == "📄 Formulario":
+    st.subheader("📄 Contenido base (Fuerza Pública)")
+    st.info("Esta sección muestra el contenido base cargado. Para editarlo, use **Constructor / Editor**.")
 
-if st.button("🧮 Construir XLSForm", use_container_width=True):
-    df_survey, df_choices, df_settings = construir_xlsform(
-        form_title=form_title,
-        logo_media_name=logo_media_name,
-        idioma=idioma,
-        version=version.strip() or version_auto
-    )
+    with st.expander("🔎 Survey (completo)"):
+        st.dataframe(pd.DataFrame(st.session_state.survey), use_container_width=True, height=420)
 
-    st.success("XLSForm construido. Vista previa rápida:")
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.markdown("**Hoja: survey**")
-        st.dataframe(df_survey, use_container_width=True, hide_index=True)
-    with c2:
-        st.markdown("**Hoja: choices**")
-        st.dataframe(df_choices, use_container_width=True, hide_index=True)
-    with c3:
-        st.markdown("**Hoja: settings**")
-        st.dataframe(df_settings, use_container_width=True, hide_index=True)
+    with st.expander("🔎 Choices (completo)"):
+        st.dataframe(pd.DataFrame(st.session_state.choices), use_container_width=True, height=300)
 
-    nombre_archivo = slugify_name(form_title) + "_xlsform.xlsx"
-    descargar_xlsform(df_survey, df_choices, df_settings, nombre_archivo)
+# ==========================================================================================
+# VISTA 2: CONSTRUCTOR / EDITOR
+# ==========================================================================================
+elif menu == "🧩 Constructor / Editor":
+    st.subheader("🧩 Constructor / Editor del formulario")
 
-    if st.session_state.get("_logo_bytes"):
+    tab_survey, tab_choices, tab_settings = st.tabs(["📝 Survey", "📚 Choices", "⚙️ Settings"])
+
+    # -------------------------
+    # TAB SURVEY
+    # -------------------------
+    with tab_survey:
+        st.markdown("### 📝 Preguntas / Estructura (Survey)")
+        survey_df = pd.DataFrame(st.session_state.survey)
+        if survey_df.empty:
+            st.info("No hay preguntas cargadas todavía.")
+        else:
+            show_cols = ["type", "name", "label", "relevant", "required", "appearance", "constraint"]
+            cols_exist = [c for c in show_cols if c in survey_df.columns]
+            st.dataframe(survey_df[cols_exist], use_container_width=True, height=280)
+
+        st.markdown("### ➕ Agregar nueva fila al Survey")
+        with st.expander("Agregar (pregunta / nota / grupo)"):
+            existing_names = {r.get("name") for r in st.session_state.survey if r.get("name")}
+
+            colA, colB = st.columns([1, 1])
+            with colA:
+                new_type = st.selectbox(
+                    "Tipo (XLSForm)",
+                    [
+                        "note",
+                        "text",
+                        "integer",
+                        "decimal",
+                        "date",
+                        "select_one yesno",
+                        "select_one age_rango",
+                        "select_one gender_id",
+                        "select_one edu",
+                        "select_one clase_policial",
+                        "select_one funcion_principal",
+                        "begin_group",
+                        "end_group",
+                    ],
+                    index=0
+                )
+            with colB:
+                new_label = st.text_input("Label / Pregunta", value="", key="add_label")
+
+            new_name_base = st.text_input("Name (identificador)", value=_slug(new_label) if new_label else "", key="add_name")
+            new_name = safe_unique_name(new_name_base or "campo", existing_names)
+
+            new_hint = st.text_input("Hint (nota corta)", value="", key="add_hint")
+
+            colC, colD, colE = st.columns(3)
+            with colC:
+                new_required = st.selectbox("Required", ["", "yes"], index=0, key="add_req")
+            with colD:
+                new_relevant = st.text_input("Relevant (condición)", value="", key="add_rel")
+            with colE:
+                new_appearance = st.text_input("Appearance", value="", key="add_app")
+
+            colF, colG = st.columns(2)
+            with colF:
+                new_constraint = st.text_input("Constraint", value="", key="add_con")
+            with colG:
+                new_constraint_message = st.text_input("Constraint message", value="", key="add_conmsg")
+
+            if st.button("✅ Agregar al Survey", use_container_width=True):
+                add_survey_row(
+                    qtype=new_type,
+                    name=new_name if new_type != "end_group" else (new_name or f"end_{len(st.session_state.survey)+1}"),
+                    label=new_label if new_type != "end_group" else "",
+                    hint=new_hint,
+                    required=new_required,
+                    relevant=new_relevant,
+                    appearance=new_appearance,
+                    constraint=new_constraint,
+                    constraint_message=new_constraint_message
+                )
+                st.success("Fila agregada al Survey.")
+
+        st.markdown("### 🛠️ Editar / Ordenar / Eliminar filas (Survey)")
+        if st.session_state.survey:
+            idx = st.number_input(
+                "Índice de fila (0..n-1)",
+                min_value=0,
+                max_value=max(0, len(st.session_state.survey) - 1),
+                value=0,
+                step=1
+            )
+            idx = int(idx)
+            row = st.session_state.survey[idx]
+
+            st.write("Fila seleccionada:")
+            st.code(json.dumps(row, ensure_ascii=False, indent=2), language="json")
+
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                if st.button("⬆️ Subir", use_container_width=True):
+                    st.success("Movido arriba.") if move_item(st.session_state.survey, idx, -1) else st.warning("No se puede subir más.")
+            with col2:
+                if st.button("⬇️ Bajar", use_container_width=True):
+                    st.success("Movido abajo.") if move_item(st.session_state.survey, idx, +1) else st.warning("No se puede bajar más.")
+            with col3:
+                if st.button("📄 Duplicar", use_container_width=True):
+                    if duplicate_item(st.session_state.survey, idx):
+                        existing = {r.get("name") for r in st.session_state.survey if r.get("name")}
+                        dup = st.session_state.survey[idx + 1]
+                        if dup.get("name"):
+                            dup["name"] = safe_unique_name(dup["name"], existing)
+                        st.success("Duplicado.")
+            with col4:
+                if st.button("🗑️ Eliminar", use_container_width=True):
+                    st.success("Eliminado.") if delete_item(st.session_state.survey, idx) else st.warning("No se pudo eliminar.")
+
+            st.markdown("#### ✏️ Editor de campos")
+            e_type = st.text_input("type", value=row.get("type", ""), key="edit_type")
+            e_name = st.text_input("name", value=row.get("name", ""), key="edit_name")
+            e_label = st.text_area("label", value=row.get("label", ""), height=80, key="edit_label")
+            e_hint = st.text_area("hint", value=row.get("hint", ""), height=60, key="edit_hint")
+
+            colR1, colR2, colR3 = st.columns(3)
+            with colR1:
+                e_required = st.text_input("required", value=row.get("required", ""), key="edit_required")
+            with colR2:
+                e_relevant = st.text_input("relevant", value=row.get("relevant", ""), key="edit_relevant")
+            with colR3:
+                e_appearance = st.text_input("appearance", value=row.get("appearance", ""), key="edit_appearance")
+
+            colR4, colR5 = st.columns(2)
+            with colR4:
+                e_constraint = st.text_input("constraint", value=row.get("constraint", ""), key="edit_constraint")
+            with colR5:
+                e_constraint_message = st.text_input("constraint_message", value=row.get("constraint_message", ""), key="edit_constraint_message")
+
+            if st.button("💾 Guardar cambios en esta fila", use_container_width=True):
+                st.session_state.survey[idx] = {
+                    "type": e_type.strip(),
+                    "name": e_name.strip(),
+                    "label": e_label,
+                    "hint": e_hint,
+                    "required": e_required.strip(),
+                    "relevant": e_relevant.strip(),
+                    "appearance": e_appearance.strip(),
+                    "calculation": row.get("calculation", ""),
+                    "constraint": e_constraint.strip(),
+                    "constraint_message": e_constraint_message.strip(),
+                }
+                st.success("Cambios guardados.")
+
+            st.info(
+                "Para páginas reales (style='pages') usamos:\n"
+                "- begin_group (label = título de la página)\n"
+                "- end_group para cerrar.\n"
+                "Para cortar por consentimiento, el resto va con relevant ${consent}='yes'."
+            )
+
+    # -------------------------
+    # TAB CHOICES
+    # -------------------------
+    with tab_choices:
+        st.markdown("### 📚 Opciones (Choices)")
+        choices_df = pd.DataFrame(st.session_state.choices)
+        if choices_df.empty:
+            st.info("No hay opciones cargadas todavía.")
+        else:
+            st.dataframe(choices_df, use_container_width=True, height=260)
+
+        st.markdown("### ➕ Crear lista de opciones nueva")
+        with st.expander("Crear nueva list_name"):
+            new_list = st.text_input("Nombre de lista (list_name)", value="", key="new_listname")
+            if st.button("✅ Crear lista vacía", use_container_width=True):
+                new_list = _slug(new_list)
+                if not new_list:
+                    st.error("Digite un list_name válido.")
+                else:
+                    st.success(f"Lista '{new_list}' lista para usar. (Agregue ítems abajo)")
+
+        st.markdown("### 🧾 Editar una lista existente")
+        lists = get_choice_lists()
+        if not lists:
+            st.warning("No hay listas para editar aún.")
+        else:
+            sel_list = st.selectbox("Seleccione list_name", lists, index=0, key="sel_list")
+            items = get_choices_for_list(sel_list)
+
+            st.write(f"Ítems en **{sel_list}**:")
+            st.dataframe(pd.DataFrame(items), use_container_width=True, height=220) if items else st.info("Esta lista está vacía.")
+
+            st.markdown("#### ➕ Agregar ítem")
+            colI1, colI2 = st.columns([1, 2])
+            with colI1:
+                item_name = st.text_input("name (valor)", value="", key="item_name")
+            with colI2:
+                item_label = st.text_input("label (texto)", value="", key="item_label")
+
+            if st.button("➕ Agregar opción", use_container_width=True):
+                item_name_s = _slug(item_name) if item_name else _slug(item_label)
+                if not item_name_s:
+                    st.error("Debe indicar name o label.")
+                else:
+                    exists = any(c.get("list_name") == sel_list and c.get("name") == item_name_s for c in st.session_state.choices)
+                    if exists:
+                        st.error("Ya existe esa opción (mismo name) en esta lista.")
+                    else:
+                        add_choice(sel_list, item_name_s, item_label.strip() or item_name_s)
+                        st.success("Opción agregada.")
+
+            st.markdown("#### 🛠️ Ordenar / Eliminar ítems")
+            if items:
+                idx_c = st.number_input("Índice de opción (0..n-1)", min_value=0, max_value=len(items)-1, value=0, step=1, key="idx_choice")
+                idx_c = int(idx_c)
+
+                colC1, colC2, colC3 = st.columns(3)
+                with colC1:
+                    if st.button("⬆️ Subir opción", use_container_width=True):
+                        st.success("Opción movida arriba.") if move_item(items, idx_c, -1) else st.warning("No se puede subir más.")
+                        set_choices_for_list(sel_list, items)
+                with colC2:
+                    if st.button("⬇️ Bajar opción", use_container_width=True):
+                        st.success("Opción movida abajo.") if move_item(items, idx_c, +1) else st.warning("No se puede bajar más.")
+                        set_choices_for_list(sel_list, items)
+                with colC3:
+                    if st.button("🗑️ Eliminar opción", use_container_width=True):
+                        st.success("Opción eliminada.") if delete_item(items, idx_c) else st.warning("No se pudo eliminar.")
+                        set_choices_for_list(sel_list, items)
+
+                st.markdown("#### ✏️ Editar opción seleccionada")
+                opt = items[idx_c]
+                e_opt_name = st.text_input("Editar name", value=opt.get("name", ""), key="edit_opt_name")
+                e_opt_label = st.text_input("Editar label", value=opt.get("label", ""), key="edit_opt_label")
+
+                if st.button("💾 Guardar cambios de opción", use_container_width=True):
+                    e_opt_name_s = _slug(e_opt_name) if e_opt_name else opt.get("name", "")
+                    if e_opt_name_s != opt.get("name"):
+                        dup = any(c.get("list_name") == sel_list and c.get("name") == e_opt_name_s for c in items)
+                        if dup:
+                            st.error("Ese name ya existe en la lista.")
+                        else:
+                            opt["name"] = e_opt_name_s
+                            opt["label"] = e_opt_label
+                            set_choices_for_list(sel_list, items)
+                            st.success("Opción actualizada.")
+                    else:
+                        opt["label"] = e_opt_label
+                        set_choices_for_list(sel_list, items)
+                        st.success("Opción actualizada.")
+
+    # -------------------------
+    # TAB SETTINGS
+    # -------------------------
+    with tab_settings:
+        st.markdown("### ⚙️ Settings del formulario")
+        st.session_state.settings["form_title"] = st.text_input(
+            "Título del formulario (form_title)",
+            value=st.session_state.settings.get("form_title", "Encuesta Policial de Percepción Institucional 2026"),
+            key="set_title"
+        )
+        st.session_state.settings["form_id"] = st.text_input(
+            "ID del formulario (form_id)",
+            value=st.session_state.settings.get("form_id", "encuesta_policial_2026_fp"),
+            key="set_id"
+        )
+        st.session_state.settings["version"] = st.text_input(
+            "Versión",
+            value=st.session_state.settings.get("version", datetime.now().strftime("%Y%m%d")),
+            key="set_ver"
+        )
+        st.info("Estos settings se exportan en la hoja 'settings' del XLSForm. Se agrega style=pages automáticamente al exportar.")
+
+    st.markdown("---")
+    colX1, colX2, colX3 = st.columns(3)
+    with colX1:
+        if st.button("🧹 Reiniciar SOLO Survey (preguntas)", use_container_width=True):
+            st.session_state.survey = []
+            st.success("Survey reiniciado. (Choices y Settings se mantienen)")
+    with colX2:
+        if st.button("🧹 Reiniciar SOLO Choices (opciones)", use_container_width=True):
+            st.session_state.choices = []
+            st.success("Choices reiniciado. (Survey y Settings se mantienen)")
+    with colX3:
+        if st.button("♻️ Reiniciar TODO (Survey + Choices + Settings)", use_container_width=True):
+            st.session_state.survey = []
+            st.session_state.choices = []
+            st.session_state.settings = {
+                "form_title": "Encuesta Policial de Percepción Institucional 2026",
+                "form_id": "encuesta_policial_2026_fp",
+                "version": datetime.now().strftime("%Y%m%d"),
+            }
+            st.session_state.preview_page_idx = 0
+            st.session_state.preview_answers = {}
+            st.success("Todo reiniciado.")
+
+# ==========================================================================================
+# VISTA 3: PROYECTO JSON (EXPORT/IMPORT)
+# ==========================================================================================
+elif menu == "💾 Proyecto (JSON)":
+    st.subheader("💾 Proyecto (JSON) — Exportar / Importar")
+
+    def export_project_dict():
+        return {
+            "meta": {
+                "app": "Generador XLSForm - Encuesta Policial 2026 (Fuerza Pública)",
+                "exported_at": datetime.now().isoformat(timespec="seconds"),
+            },
+            "settings": st.session_state.settings,
+            "survey": st.session_state.survey,
+            "choices": st.session_state.choices,
+        }
+
+    def validate_project_dict(data: dict):
+        if not isinstance(data, dict):
+            return False, "El archivo no contiene un objeto JSON válido."
+
+        for k in ("settings", "survey", "choices"):
+            if k not in data:
+                return False, f"Falta la llave '{k}' en el proyecto."
+
+        if not isinstance(data["settings"], dict):
+            return False, "settings debe ser un objeto."
+        if not isinstance(data["survey"], list):
+            return False, "survey debe ser una lista."
+        if not isinstance(data["choices"], list):
+            return False, "choices debe ser una lista."
+
+        required_survey_keys = {"type", "name", "label", "hint", "required", "relevant", "appearance",
+                               "calculation", "constraint", "constraint_message"}
+        for i, row in enumerate(data["survey"]):
+            if not isinstance(row, dict):
+                return False, f"survey[{i}] no es un objeto."
+            missing = required_survey_keys - set(row.keys())
+            if missing:
+                return False, f"survey[{i}] está incompleto. Faltan: {', '.join(sorted(missing))}"
+
+        required_choice_keys = {"list_name", "name", "label"}
+        for i, row in enumerate(data["choices"]):
+            if not isinstance(row, dict):
+                return False, f"choices[{i}] no es un objeto."
+            missing = required_choice_keys - set(row.keys())
+            if missing:
+                return False, f"choices[{i}] está incompleto. Faltan: {', '.join(sorted(missing))}"
+
+        return True, "OK"
+
+    colP1, colP2 = st.columns([1, 1])
+
+    with colP1:
+        st.markdown("### ⬇️ Exportar proyecto")
+        project = export_project_dict()
+        project_json = json.dumps(project, ensure_ascii=False, indent=2)
+
         st.download_button(
-            "📥 Descargar logo para carpeta media/",
-            data=st.session_state["_logo_bytes"],
-            file_name=logo_media_name,
-            mime="image/png",
+            "📥 Descargar proyecto (.json)",
+            data=project_json.encode("utf-8"),
+            file_name=f"{st.session_state.settings.get('form_id','encuesta_policial_2026_fp')}_proyecto.json",
+            mime="application/json",
             use_container_width=True
         )
 
-    st.info("""
-**Cómo usar en Survey123 Connect**
-1) Crear encuesta **desde archivo** y seleccionar el XLSForm descargado.  
-2) Copiar el logo dentro de la carpeta **media/** del proyecto, con el **mismo nombre** que pusiste en `media::image`.  
-3) Verás páginas con **Siguiente/Anterior** (porque `settings.style = pages`).  
-""")
+        with st.expander("Ver JSON (solo lectura)"):
+            st.code(project_json, language="json")
+
+    with colP2:
+        st.markdown("### ⬆️ Importar proyecto")
+        up = st.file_uploader("Cargar proyecto .json", type=["json"], accept_multiple_files=False)
+        if up is not None:
+            try:
+                raw = up.read().decode("utf-8")
+                data = json.loads(raw)
+                ok, msg = validate_project_dict(data)
+                if not ok:
+                    st.error(f"No se puede importar: {msg}")
+                else:
+                    st.session_state.settings = data["settings"]
+                    st.session_state.survey = data["survey"]
+                    st.session_state.choices = data["choices"]
+                    st.success("✅ Proyecto importado correctamente.")
+            except Exception as e:
+                st.error(f"Error al leer el JSON: {e}")
+
+    st.info("Consejo: Exportá el proyecto cada vez que hagás cambios grandes. Así nunca perdés tu avance.")
+
+# ==========================================================================================
+# VISTA 4: EXPORTAR XLSFORM (EXCEL)
+# ==========================================================================================
+elif menu == "📤 Exportar XLSForm":
+    st.subheader("📤 Exportar a XLSForm (Excel) para ArcGIS Survey123")
+
+    def build_xlsform_dataframes():
+        survey_df = pd.DataFrame(st.session_state.survey)
+        if survey_df.empty:
+            survey_df = pd.DataFrame(columns=[
+                "type", "name", "label", "hint", "required", "relevant", "appearance",
+                "calculation", "constraint", "constraint_message"
+            ])
+
+        survey_cols = [
+            "type", "name", "label", "hint", "required", "relevant", "appearance",
+            "calculation", "constraint", "constraint_message"
+        ]
+        for c in survey_cols:
+            if c not in survey_df.columns:
+                survey_df[c] = ""
+        survey_df = survey_df[survey_cols].fillna("")
+
+        choices_df = pd.DataFrame(st.session_state.choices)
+        if choices_df.empty:
+            choices_df = pd.DataFrame(columns=["list_name", "name", "label"])
+        for c in ["list_name", "name", "label"]:
+            if c not in choices_df.columns:
+                choices_df[c] = ""
+        choices_df = choices_df[["list_name", "name", "label"]].fillna("")
+
+        s = st.session_state.settings or {}
+        settings_df = pd.DataFrame([{
+            "form_title": s.get("form_title", "Encuesta Policial de Percepción Institucional 2026"),
+            "form_id": s.get("form_id", "encuesta_policial_2026_fp"),
+            "version": s.get("version", datetime.now().strftime("%Y%m%d")),
+            "style": "pages",
+            "default_language": "Español",
+        }])
+
+        return survey_df, choices_df, settings_df
+
+    def to_xlsx_bytes(survey_df, choices_df, settings_df):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            survey_df.to_excel(writer, index=False, sheet_name="survey")
+            choices_df.to_excel(writer, index=False, sheet_name="choices")
+            settings_df.to_excel(writer, index=False, sheet_name="settings")
+        output.seek(0)
+        return output.getvalue()
+
+    colE1, colE2 = st.columns([1, 1])
+
+    with colE1:
+        st.markdown("### ✅ Verificación rápida")
+
+        names = [r.get("name", "") for r in st.session_state.survey if r.get("name", "")]
+        dup_names = sorted({n for n in names if names.count(n) > 1})
+        if dup_names:
+            st.error("Hay nombres duplicados (name) en Survey. Esto puede romper el XLSForm:")
+            st.write(dup_names)
+        else:
+            st.success("No se detectan nombres duplicados en Survey.")
+
+        pairs = [(c.get("list_name", ""), c.get("name", "")) for c in st.session_state.choices]
+        dup_pairs = sorted({p for p in pairs if pairs.count(p) > 1})
+        if dup_pairs:
+            st.error("Hay opciones duplicadas en Choices (mismo list_name + name):")
+            st.write(dup_pairs)
+        else:
+            st.success("No se detectan duplicados en Choices.")
+
+    with colE2:
+        st.markdown("### 📥 Descargar XLSForm (.xlsx)")
+        survey_df, choices_df, settings_df = build_xlsform_dataframes()
+        xlsx_bytes = to_xlsx_bytes(survey_df, choices_df, settings_df)
+        file_name = f"{st.session_state.settings.get('form_id','encuesta_policial_2026_fp')}.xlsx"
+
+        st.download_button(
+            "📥 Descargar XLSForm",
+            data=xlsx_bytes,
+            file_name=file_name,
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
+
+        with st.expander("👀 Vista previa (survey/choices/settings)"):
+            st.markdown("**survey**")
+            st.dataframe(survey_df, use_container_width=True, height=200)
+            st.markdown("**choices**")
+            st.dataframe(choices_df, use_container_width=True, height=180)
+            st.markdown("**settings**")
+            st.dataframe(settings_df, use_container_width=True, height=120)
+
+# ==========================================================================================
+# VISTA 5: VISTA PREVIA (SIMULADOR)
+# ==========================================================================================
+elif menu == "👁️ Vista previa":
+    st.subheader("👁️ Vista previa por páginas (simulador)")
+
+    def _get_answer(ans: dict, name: str):
+        return ans.get(name, "")
+
+    def _eval_simple_expr(expr: str, answers: dict) -> bool:
+        """
+        Soporta relevant típico:
+        ${consent}='yes'
+        ${x}!='y'
+        (${a}='x' and ${b}='y') or ${c}='z'
+
+        Si hay caracteres no esperados o falla eval → True (no ocultar por error).
+        """
+        if not expr or not str(expr).strip():
+            return True
+        s = str(expr).strip()
+
+        def repl(m):
+            field = m.group(1)
+            val = str(_get_answer(answers, field))
+            val = val.replace("'", "\\'")
+            return f"'{val}'"
+
+        s = re.sub(r"\$\{([A-Za-z0-9_]+)\}", repl, s)
+        s = re.sub(r"(?<![=!<>])=(?!=)", "==", s)  # '=' -> '=='
+
+        s = re.sub(r"\s+", " ", s).strip()
+
+        allowed = re.compile(r"^[\s\w'\\\(\)\=\!\<\>\.\-]+$")
+        if not allowed.match(s):
+            return True
+
+        try:
+            return bool(eval(s, {"__builtins__": {}}, {}))
+        except Exception:
+            return True
+
+    def build_pages_from_survey(survey_rows: list):
+        pages = []
+        current = None
+        orphan = []
+
+        for r in survey_rows:
+            t = (r.get("type") or "").strip()
+            if t == "begin_group":
+                if orphan:
+                    pages.append({"name": "sin_pagina", "title": "Sin página", "rows": orphan})
+                    orphan = []
+                current = {
+                    "name": r.get("name") or f"page_{len(pages)+1}",
+                    "title": r.get("label") or "Página",
+                    "rows": []
+                }
+                continue
+
+            if t == "end_group":
+                if current is not None:
+                    pages.append(current)
+                    current = None
+                continue
+
+            if current is None:
+                orphan.append(r)
+            else:
+                current["rows"].append(r)
+
+        if current is not None:
+            pages.append(current)
+        if orphan:
+            pages.append({"name": "sin_pagina", "title": "Sin página", "rows": orphan})
+
+        return pages
+
+    def render_row(row: dict, answers: dict):
+        qtype = (row.get("type") or "").strip()
+        name = (row.get("name") or "").strip()
+        label = row.get("label") or ""
+        hint = row.get("hint") or ""
+        required = (row.get("required") or "").strip().lower() == "yes"
+        appearance = (row.get("appearance") or "").strip()
+
+        if qtype in ("begin_group", "end_group", "begin_repeat", "end_repeat"):
+            return
+
+        if qtype == "note":
+            st.markdown(label.replace("\n", "  \n"))
+            if hint:
+                st.caption(hint)
+            return
+
+        req_star = " *" if required else ""
+        show_label = f"{label}{req_star}"
+
+        if qtype.startswith("select_one"):
+            list_name = qtype.split(" ", 1)[1].strip() if " " in qtype else ""
+            opts = [c for c in st.session_state.choices if c.get("list_name") == list_name]
+            labels = [c.get("label", "") for c in opts]
+            values = [c.get("name", "") for c in opts]
+
+            if "or_other" in appearance:
+                labels2 = labels + ["Otra (especifique)"]
+                values2 = values + ["__other__"]
+                sel = st.radio(show_label, labels2, index=0 if labels2 else None, key=f"prev_{name}")
+                if sel == "Otra (especifique)":
+                    answers[name] = "__other__"
+                    other_txt = st.text_input("Especifique:", key=f"prev_{name}_other")
+                    answers[f"{name}_other"] = other_txt
+                else:
+                    answers[name] = values2[labels2.index(sel)]
+                if hint:
+                    st.caption(hint)
+                return
+
+            sel = st.radio(show_label, labels, index=0 if labels else None, key=f"prev_{name}")
+            answers[name] = values[labels.index(sel)] if labels else ""
+            if hint:
+                st.caption(hint)
+            return
+
+        if qtype.startswith("select_multiple"):
+            list_name = qtype.split(" ", 1)[1].strip() if " " in qtype else ""
+            opts = [c for c in st.session_state.choices if c.get("list_name") == list_name]
+            labels = [c.get("label", "") for c in opts]
+            values = [c.get("name", "") for c in opts]
+            sel = st.multiselect(show_label, labels, default=[], key=f"prev_{name}")
+            picked = [values[labels.index(x)] for x in sel] if labels else []
+            answers[name] = " ".join(picked)
+            if hint:
+                st.caption(hint)
+            return
+
+        if qtype == "integer":
+            val = st.number_input(show_label, step=1, value=0, key=f"prev_{name}")
+            answers[name] = str(int(val))
+            if hint:
+                st.caption(hint)
+            return
+
+        if qtype == "decimal":
+            val = st.number_input(show_label, step=0.1, value=0.0, key=f"prev_{name}")
+            answers[name] = str(val)
+            if hint:
+                st.caption(hint)
+            return
+
+        if qtype == "text":
+            val = st.text_input(show_label, key=f"prev_{name}")
+            answers[name] = val
+            if hint:
+                st.caption(hint)
+            return
+
+        if qtype == "date":
+            val = st.date_input(show_label, key=f"prev_{name}")
+            answers[name] = str(val)
+            if hint:
+                st.caption(hint)
+            return
+
+        val = st.text_input(f"{show_label} (tipo: {qtype})", key=f"prev_{name}")
+        answers[name] = val
+        if hint:
+            st.caption(hint)
+
+    pages = build_pages_from_survey(st.session_state.survey)
+
+    answers = st.session_state.preview_answers
+    consent_val = answers.get("consent", "")
+    force_end = (consent_val == "no")
+
+    top1, top2, top3 = st.columns([1, 2, 1])
+    with top1:
+        if st.button("🔄 Reiniciar vista previa", use_container_width=True):
+            st.session_state.preview_page_idx = 0
+            st.session_state.preview_answers = {}
+            st.success("Vista previa reiniciada.")
+            st.stop()
+
+    with top2:
+        if pages:
+            st.progress((st.session_state.preview_page_idx + 1) / len(pages))
+            st.caption(f"Página {st.session_state.preview_page_idx + 1} de {len(pages)}")
+        else:
+            st.warning("No hay páginas (begin_group/end_group) en el Survey.")
+            st.stop()
+
+    with top3:
+        with st.expander("📌 Respuestas (debug)"):
+            st.code(json.dumps(answers, ensure_ascii=False, indent=2), language="json")
+
+    page = pages[st.session_state.preview_page_idx]
+    st.markdown(f"### 📄 {page['title']}")
+
+    for row in page["rows"]:
+        if force_end and page["name"] not in ("p1_intro", "p2_consent"):
+            continue
+
+        rel = row.get("relevant", "")
+        if _eval_simple_expr(rel, answers):
+            render_row(row, answers)
+
+    nav1, nav2, nav3 = st.columns([1, 1, 1])
+    with nav1:
+        if st.button("⬅️ Anterior", use_container_width=True):
+            st.session_state.preview_page_idx = max(0, st.session_state.preview_page_idx - 1)
+
+    with nav2:
+        if force_end and page["name"] == "p2_consent":
+            st.info("Encuesta finalizada por falta de consentimiento.")
+        else:
+            if st.button("Siguiente ➡️", use_container_width=True):
+                st.session_state.preview_page_idx = min(len(pages) - 1, st.session_state.preview_page_idx + 1)
+
+    with nav3:
+        st.write("")
+
+# ==========================================================================================
+# FOOTER
+# ==========================================================================================
+st.markdown("---")
+st.caption("✅ App completa lista (una sola porción). Fuerza Pública 2026. Exporta XLSForm con style=pages y mantiene flujo de consentimiento.")
+
+
+
 
 
 
