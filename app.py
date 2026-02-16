@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 # ==========================================================================================
 # App: Encuesta FUERZA PÚBLICA → XLSForm para ArcGIS Survey123 (versión extendida)
-# - MISMA UI y funcionalidades de tu app anterior (constructor, qid estable, JSON, XLSForm)
-# - POR AHORA SOLO 3 páginas:
-#     P1 Intro (texto FP 2026 EXACTO)
-#     P2 Consentimiento (MISMO texto por bloques + finaliza si NO)
-#     P3 Datos generales (título + intro EXACTO + preguntas base editables)
+# - MISMA UI y funcionalidades: constructor CRUD, qid estable, JSON, XLSForm, pages, logo, consent.
+# - SOLO 3 páginas:
+#     P1 Intro FP 2026
+#     P2 Consentimiento (bloques) + finaliza si NO
+#     P3 Datos generales (intro + preguntas)
 #
-# ✅ CORRECCIÓN SOLICITADA:
-# - NO lleva Cantón/Distrito
-# - NO lleva catálogo por lotes ni choice_filter ni placeholders
-# - Solo se usa el campo "Nombre del lugar / Delegación" del encabezado
+# ✅ CORRECCIÓN CLAVE:
+# - ELIMINA AUTOMÁTICAMENTE cualquier resto de "canton" / "distrito" (por JSON viejo o estado previo),
+#   para evitar el error: "List name not in choices sheet: list_canton".
 # ==========================================================================================
 
 import re
@@ -149,6 +148,33 @@ def q_index_by_qid(qid: str) -> int:
     return -1
 
 # ------------------------------------------------------------------------------------------
+# ✅ SANITIZADOR: elimina CANTON/DISTRITO y limpia reglas/choice_filter que los referencien
+# ------------------------------------------------------------------------------------------
+BAN_NAMES = {"canton", "distrito"}
+
+def sanitize_state():
+    # 1) limpiar preguntas canton/distrito
+    preguntas = [ensure_qid(q) for q in st.session_state.get("preguntas", [])]
+    preguntas = [q for q in preguntas if q.get("name") not in BAN_NAMES]
+
+    # 2) limpiar choice_filter que use ${canton}/${distrito}
+    for q in preguntas:
+        cf = q.get("choice_filter") or ""
+        if "${canton}" in cf or "${distrito}" in cf:
+            q["choice_filter"] = None
+
+    st.session_state.preguntas = preguntas
+
+    # 3) limpiar reglas que referencien canton/distrito
+    rv = list(st.session_state.get("reglas_visibilidad", []))
+    rv = [r for r in rv if r.get("target") not in BAN_NAMES and r.get("src") not in BAN_NAMES]
+    st.session_state.reglas_visibilidad = rv
+
+    rf = list(st.session_state.get("reglas_finalizar", []))
+    rf = [r for r in rf if r.get("src") not in BAN_NAMES]
+    st.session_state.reglas_finalizar = rf
+
+# ------------------------------------------------------------------------------------------
 # Estado base (session_state)
 # ------------------------------------------------------------------------------------------
 if "preguntas" not in st.session_state:
@@ -256,7 +282,7 @@ with st.sidebar:
         proj = {
             "idioma": idioma,
             "version": version,
-            "preguntas": st.session_state.preguntas,  # incluye qid
+            "preguntas": st.session_state.preguntas,
             "reglas_visibilidad": st.session_state.reglas_visibilidad,
             "reglas_finalizar": st.session_state.reglas_finalizar,
             "textos_fijos": st.session_state.textos_fijos,
@@ -284,6 +310,9 @@ with st.sidebar:
             st.session_state.textos_fijos = dict(data.get("textos_fijos", st.session_state.textos_fijos))
 
             st.session_state.edit_qid = None
+
+            # ✅ LIMPIA restos canton/distrito al importar
+            sanitize_state()
             _rerun()
         except Exception as e:
             st.error(f"No se pudo importar el JSON: {e}")
@@ -293,7 +322,6 @@ with st.sidebar:
 # ------------------------------------------------------------------------------------------
 if "seed_cargado" not in st.session_state:
     seed = [
-        # ---------------- Consentimiento ----------------
         {"tipo_ui": "Selección única",
          "label": "¿Acepta participar en esta encuesta?",
          "name": "consentimiento",
@@ -303,7 +331,6 @@ if "seed_cargado" not in st.session_state:
          "choice_filter": None,
          "relevant": None},
 
-        # ---------------- Datos generales ----------------
         {"tipo_ui": "Número",
          "label": "1. Años de servicio (años completos):",
          "name": "anos_servicio",
@@ -401,6 +428,8 @@ if "seed_cargado" not in st.session_state:
     st.session_state.preguntas = [ensure_qid(q) for q in seed]
     st.session_state.seed_cargado = True
 
+# ✅ siempre sanitiza (por si quedó basura en el estado)
+sanitize_state()
 st.session_state.preguntas = [ensure_qid(q) for q in st.session_state.preguntas]
 
 # ------------------------------------------------------------------------------------------
@@ -446,6 +475,8 @@ if add:
         })
         st.session_state.preguntas.append(nueva)
         st.session_state.edit_qid = None
+
+        sanitize_state()
         st.success(f"Pregunta agregada: **{label}** (name: `{unico}`)")
         _rerun()
 
@@ -498,6 +529,7 @@ else:
                 if st.session_state.edit_qid == qid:
                     st.session_state.edit_qid = None
                 del st.session_state.preguntas[idx]
+                sanitize_state()
                 st.warning("Pregunta eliminada.")
                 _rerun()
 
@@ -533,12 +565,18 @@ else:
                     st.session_state.preguntas[cur_idx]["name"] = ne_name_final
                     st.session_state.preguntas[cur_idx]["required"] = ne_required
                     st.session_state.preguntas[cur_idx]["appearance"] = ne_appearance.strip() or None
-                    st.session_state.preguntas[cur_idx]["choice_filter"] = ne_choice_filter.strip() or None
+
+                    cf = ne_choice_filter.strip() or None
+                    if cf and ("${canton}" in cf or "${distrito}" in cf):
+                        cf = None
+                    st.session_state.preguntas[cur_idx]["choice_filter"] = cf
+
                     st.session_state.preguntas[cur_idx]["relevant"] = ne_relevant.strip() or None
 
                     if q["tipo_ui"] in ("Selección única", "Selección múltiple"):
                         st.session_state.preguntas[cur_idx]["opciones"] = ne_opciones
 
+                    sanitize_state()
                     st.success("Cambios guardados.")
                     st.session_state.edit_qid = None
                     _rerun()
@@ -582,6 +620,7 @@ else:
                 st.error("Indica al menos un valor.")
             else:
                 st.session_state.reglas_visibilidad.append({"target": target, "src": src, "op": op, "values": vals})
+                sanitize_state()
                 st.success("Regla agregada.")
                 _rerun()
 
@@ -591,6 +630,7 @@ else:
                 st.write(f"- Mostrar **{r['target']}** si **{r['src']}** {r['op']} {r['values']}")
                 if st.button(f"Eliminar regla #{i+1}", key=f"del_vis_{i}"):
                     del st.session_state.reglas_visibilidad[i]
+                    sanitize_state()
                     _rerun()
 
     with st.expander("⏹️ Finalizar temprano si se cumple condición", expanded=False):
@@ -617,6 +657,7 @@ else:
             else:
                 idx_src = next((i for i, qq in enumerate(st.session_state.preguntas) if qq["name"] == src2), 0)
                 st.session_state.reglas_finalizar.append({"src": src2, "op": op2, "values": vals2, "index_src": idx_src})
+                sanitize_state()
                 st.success("Regla agregada.")
                 _rerun()
 
@@ -626,6 +667,7 @@ else:
                 st.write(f"- Si **{r['src']}** {r['op']} {r['values']} ⇒ ocultar lo que sigue (efecto fin)")
                 if st.button(f"Eliminar regla fin #{i+1}", key=f"del_fin_{i}"):
                     del st.session_state.reglas_finalizar[i]
+                    sanitize_state()
                     _rerun()
 
 # ------------------------------------------------------------------------------------------
@@ -773,10 +815,13 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
     for i, qq in enumerate(preguntas):
         if qq.get("name") == "consentimiento":
             continue
+
+        # fuerza relevant = consentimiento Sí
         if not qq.get("relevant"):
             qq["relevant"] = rel_si
         else:
             qq["relevant"] = f"({rel_si}) and ({qq['relevant']})"
+
         add_q(qq, i)
 
     survey_rows.append({"type": "end_group", "name": "p3_datos_generales_end"})
@@ -816,6 +861,9 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str,
 # ------------------------------------------------------------------------------------------
 st.markdown("---")
 st.subheader("📤 Exportar XLSForm (Survey123)")
+
+# ✅ vuelve a sanitizar antes de construir
+sanitize_state()
 
 df_survey, df_choices, df_settings = construir_xlsform(
     preguntas=st.session_state.preguntas,
