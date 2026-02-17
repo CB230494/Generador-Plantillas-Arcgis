@@ -346,7 +346,7 @@ if "seed_cargado_policial" not in st.session_state:
 
     _add_if_missing({
         "tipo_ui": "Selección única",
-        "label": "2. Edad (en años cumplidos): marque con una X la categoría que incluya su edad.",
+        "label": "2. Edad (en años cumplidos): marque la categoría que incluya su edad.",
         "name": "edad_rango",
         "required": True,
         "opciones": ["18 a 29 años", "30 a 44 años", "45 a 59 años", "60 años o más"],
@@ -1218,6 +1218,7 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
 
 
 
