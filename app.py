@@ -216,22 +216,11 @@ def _get_logo_media_name():
 # Textos base (Intro / Consentimiento / Intros de páginas)
 # ------------------------------------------------------------------------------------------
 INTRO_POLICIAL_2026 = (
-    "El presente formato corresponde a la Encuesta Policial de Percepción Institucional 2026, dirigida al personal "
-    "de la Fuerza Pública, y orientada a recopilar información relevante desde la experiencia operativa y territorial "
-    "del funcionariado policial, en relación con la seguridad, la convivencia y los factores de riesgo presentes en las "
-    "distintas jurisdicciones del país. "
-    "El instrumento incorpora la percepción del personal sobre condiciones institucionales que inciden en la prestación "
-    "del servicio policial, tales como el entorno operativo de la delegación, la disponibilidad de recursos, las necesidades "
-    "de capacitación y el entorno institucional que favorece la motivación para la atención a la ciudadanía. "
-    "La información recopilada servirá como insumo para el análisis institucional, la planificación preventiva y la mejora "
-    "continua del servicio policial. "
-    "El documento se remite para su revisión y validación técnica, con el fin de asegurar su coherencia metodológica, normativa "
-    "y operativa, previo a su aplicación en territorio."
+    "Esta encuesta busca recopilar información desde la experiencia del personal de la Fuerza Pública para apoyar la "
+    "planificación preventiva y la mejora del servicio policial."
 )
 
 INTRO_DATOS_GENERALES = (
-    "Esta encuesta busca recopilar información desde la experiencia del personal de la Fuerza Pública para apoyar la "
-    "planificación preventiva y la mejora del servicio policial."
 )
 
 INTRO_INTERES_POLICIAL = (
@@ -1229,6 +1218,7 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
 
 
 
