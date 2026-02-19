@@ -388,7 +388,7 @@ if "seed_cargado_policial" not in st.session_state:
 
     _add_if_missing({
         "tipo_ui": "Selección única",
-        "label": "5. ¿Cuál es su clase policial que desempeña en su delegación?",
+        "label": "5. ¿Cuál es la clase policial que desempeña en su delegación?",
         "name": "clase_policial",
         "required": True,
         "opciones": [
@@ -1218,6 +1218,7 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
 
 
 
