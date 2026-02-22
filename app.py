@@ -283,17 +283,15 @@ NOTA_ACLARATORIA_Q51 = (
 
 # NOTAS NUEVAS (P5: 14 y 15)
 NOTA_ASEO_Q14 = (
-    "Nota: Esta pregunta se orienta a registrar la frecuencia de condiciones de aseo observadas durante el desarrollo cotidiano del servicio "
-    "en las instalaciones internas de la delegación policial. La información recopilada corresponde a una apreciación descriptiva basada en la "
-    "observación del entorno de trabajo y no constituye una evaluación administrativa, disciplinaria ni de gestión institucional. Su finalidad es "
-    "exclusivamente diagnóstica y preventiva para el análisis agregado dentro del marco de la Estrategia Sembremos Seguridad."
+    "Nota: Esta pregunta registra la presencia y frecuencia de condiciones de aseo observadas en las instalaciones internas de la delegación durante el desarrollo ordinario del servicio. "
+    "La respuesta se basa en la observación cotidiana del entorno de trabajo y tiene carácter descriptivo, constituyendo un insumo para análisis institucional agregado, "
+    "sin implicar evaluación administrativa ni disciplinaria."
 )
 
 NOTA_ORNATO_Q15 = (
-    "Nota: Esta pregunta se orienta a identificar la frecuencia de condiciones de desorden o deterioro observadas en el entorno inmediato de la delegación "
-    "policial durante el desarrollo ordinario del servicio. La información recopilada corresponde a una apreciación descriptiva basada en la observación del "
-    "entorno físico y no constituye una evaluación administrativa, disciplinaria ni de gestión institucional. Su finalidad es diagnóstica y preventiva para el "
-    "análisis agregado dentro del marco de la Estrategia Sembremos Seguridad."
+    "Nota: Esta pregunta registra la presencia y frecuencia de condiciones de desorden o deterioro observadas en los espacios físicos externos de la delegación "
+    "(patios, jardines, frente o parte posterior) durante el servicio ordinario. La respuesta se fundamenta en la observación directa del entorno institucional "
+    "y tiene carácter descriptivo, constituyendo un insumo para análisis institucional agregado, sin implicar evaluación administrativa ni disciplinaria."
 )
 
 # ------------------------------------------------------------------------------------------
@@ -1451,3 +1449,4 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
