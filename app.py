@@ -23,6 +23,11 @@
 #     * Se agregan nuevas preguntas 14 y 15 (aseo / ornato) con sus notas
 #     * Se re-numera: antes 14→16, 14.1→16.1, 15→17, 16→18
 #     * Se agregan notas informativas bajo 10, 10.1, 11, 11.1, 12, 12.1, 13, 13.1, 16, 16.1, 17, 18
+#
+# ✅ CORRECCIÓN SOLICITADA:
+# - Las notas asociadas a preguntas con relevant (ej. 10.1, 11.1, 12.1, 13.1, 16.1, etc.)
+#   ahora heredan el MISMO relevant final de la pregunta, para que solo se muestren cuando
+#   la pregunta esté visible.
 # ==========================================================================================
 
 import re
@@ -30,7 +35,7 @@ import json
 import uuid
 from io import BytesIO
 from datetime import datetime
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 import streamlit as st
 import pandas as pd
@@ -237,7 +242,7 @@ INTRO_POLICIAL_2026 = (
     "planificación preventiva y la mejora del servicio policial."
 )
 
-# --- TEXTOS INFORMativos por página (según imágenes) ---
+# --- TEXTOS INFORMATIVOS por página (según imágenes) ---
 P3_TEXTO_SUPERIOR = (
     "Esta encuesta tiene como propósito recopilar información desde la experiencia operativa del personal de la Fuerza Pública, "
     "con el fin de fortalecer el análisis institucional, la planificación preventiva y la mejora continua del servicio policial. "
@@ -1175,7 +1180,11 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
         if cond:
             fin_conds.append((r["index_src"], cond))
 
-    def add_q(q, idx):
+    def add_q(q, idx) -> Optional[str]:
+        """
+        Agrega la pregunta al survey y devuelve el relevant FINAL aplicado a la pregunta.
+        Esto se usa para que las notas 'after' hereden el mismo relevant de la pregunta.
+        """
         x_type, default_app, list_name = map_tipo_to_xlsform(q["tipo_ui"], q["name"])
 
         rel_manual = q.get("relevant") or None
@@ -1217,6 +1226,8 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
                 opt_name = asegurar_nombre_unico(base, usados)
                 usados.add(opt_name)
                 _choices_add_unique({"list_name": list_name, "name": opt_name, "label": str(opt_label)})
+
+        return rel_final
 
     # --------------------------------------------------------------------------------------
     # Página 1: Intro
@@ -1334,13 +1345,20 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
 
         for i, qq in enumerate(preguntas):
             if qq["name"] in names_set:
-                add_q(qq, i)
+                rel_q = add_q(qq, i)  # ✅ relevant FINAL de la pregunta
 
                 notes_after = per_question_notes.get(qq["name"], [])
                 for n in notes_after:
                     nrow = dict(n)
-                    if group_relevant and "relevant" not in nrow:
-                        nrow["relevant"] = group_relevant
+
+                    # ✅ Si la nota no trae relevant explícito, hereda el relevant de la pregunta.
+                    #    Si la pregunta no tiene relevant, cae al group_relevant (si existe).
+                    if "relevant" not in nrow or not str(nrow.get("relevant") or "").strip():
+                        if rel_q:
+                            nrow["relevant"] = rel_q
+                        elif group_relevant:
+                            nrow["relevant"] = group_relevant
+
                     survey_rows.append(nrow)
 
         survey_rows.append({"type": "end_group", "name": f"{group_name}_end"})
@@ -1372,7 +1390,7 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
     # --------------------------------------------------------------------------------------
     # P4 Contexto territorial y problemáticas de interés operativo
     # + Nota previa confidencial condicionada a presencia_ilicita = Sí
-    # + Título e introducción (imagen 2)
+    # + Título e introducción
     # + Nota bajo pregunta 7 y 8
     # --------------------------------------------------------------------------------------
     nota_previa_confidencial = {
@@ -1405,8 +1423,8 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
 
     # --------------------------------------------------------------------------------------
     # P5 Información de condiciones institucionales y operativas de la delegación
-    # + Título e introducción (imagen 3)
-    # + Notas bajo 10, 10.1, 11, 11.1, 12, 12.1, 13, 13.1, 14, 15, 16, 16.1, 17, 18
+    # + Título e introducción
+    # + Notas bajo preguntas (y ahora heredan relevant de la pregunta)
     # --------------------------------------------------------------------------------------
     extra_notes_p5 = [
         {"type": "note", "name": "p5_titulo", "label": f"<p style='text-align:center;'><b>{P5_TITULO}</b></p>"},
@@ -1414,25 +1432,18 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
     ]
 
     per_notes_p5 = {
-        # 10 y 10.1
         "condiciones_basicas_ok": [{"type": "note", "name": "nota_q10", "label": NOTA_Q10}],
         "condiciones_mejorar": [{"type": "note", "name": "nota_q101", "label": NOTA_Q101}],
-        # 11 y 11.1
         "falta_capacitacion": [{"type": "note", "name": "nota_q11", "label": NOTA_Q11}],
         "areas_capacitacion": [{"type": "note", "name": "nota_q111", "label": NOTA_Q111}],
-        # 12 y 12.1
         "entorno_motivacion": [{"type": "note", "name": "nota_q12", "label": NOTA_Q12}],
         "motivo_motivacion": [{"type": "note", "name": "nota_q121", "label": NOTA_Q121}],
-        # 13 y 13.1
         "situaciones_internas": [{"type": "note", "name": "nota_q13", "label": NOTA_Q13}],
         "desc_situaciones_internas": [{"type": "note", "name": "nota_q131", "label": NOTA_Q131}],
-        # 14 y 15 (ya existentes)
         "condiciones_aseo_interno": [{"type": "note", "name": "nota_q14_aseo", "label": NOTA_ASEO_Q14}],
         "condiciones_ornato_entorno": [{"type": "note", "name": "nota_q15_ornato", "label": NOTA_ORNATO_Q15}],
-        # 16 y 16.1
         "oficiales_relacion_crimen": [{"type": "note", "name": "nota_q16", "label": NOTA_Q16}],
         "desc_oficiales_relacion": [{"type": "note", "name": "nota_q161", "label": NOTA_Q161}],
-        # 17 y 18
         "contacto_voluntario": [{"type": "note", "name": "nota_q17", "label": NOTA_Q17}],
         "info_adicional": [{"type": "note", "name": "nota_q18", "label": NOTA_Q18}],
     }
