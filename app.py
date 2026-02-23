@@ -270,15 +270,16 @@ CONSENTIMIENTO_BLOQUES = [
 
 # NOTAS ACLARATORIAS (P3)
 NOTA_ACLARATORIA_Q5 = (
-    "Nota aclaratoria: La pregunta sobre la clase policial que desempeña se utilizan únicamente para organizar la información "
-    "según el rol operativo desde el cual se responde el instrumento. No constituyen identificación personal ni individualización "
-    "del funcionario, y se enmarcan dentro del principio de confidencialidad institucional propio del ejercicio de la función pública."
+    "Nota aclaratoria: La pregunta sobre la clase policial que desempeña se utiliza únicamente para organizar la información "
+    "según el rol operativo desde el cual se responde el instrumento. No constituye identificación personal ni individualización "
+    "del funcionario, y su tratamiento se enmarca en el deber de confidencialidad y manejo responsable de la información institucional, "
+    "conforme a la Ley N.° 8968 y a los principios que rigen el ejercicio de la función pública."
 )
 
 NOTA_ACLARATORIA_Q51 = (
-    "Nota aclaratoria: La pregunta sobre la función principal desempeñada se utilizan únicamente para organizar la información "
-    "según el rol operativo desde el cual se responde el instrumento. No constituyen identificación personal ni individualización "
-    "del funcionario, y se enmarcan dentro del principio de confidencialidad institucional propio del ejercicio de la función pública."
+    "Nota aclaratoria: La pregunta sobre la función principal desempeñada se utiliza únicamente para organizar la información "
+    "según el rol operativo desde el cual se responde el instrumento. No implica identificación personal y su tratamiento se realiza "
+    "conforme al deber de confidencialidad establecido en la Ley N.° 8968 y a los principios que rigen el ejercicio de la función pública."
 )
 
 # NOTAS NUEVAS (P5: 14 y 15)
@@ -1449,4 +1450,5 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
 
