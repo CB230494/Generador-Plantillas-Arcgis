@@ -254,18 +254,17 @@ CONSENT_SI = slugify_name("Sí")
 CONSENT_NO = slugify_name("No")
 
 CONSENTIMIENTO_BLOQUES = [
-    "Usted está siendo invitado(a) a participar de forma libre y voluntaria en una encuesta sobre seguridad, convivencia y percepción institucional, dirigida al personal de la Fuerza Pública.",
-    "El objetivo de esta encuesta es recopilar información de carácter preventivo y estadístico, con el fin de apoyar el análisis institucional, la planificación preventiva y la mejora continua del servicio policial.",
-    "La participación es totalmente voluntaria. Usted puede negarse a responder cualquier pregunta, así como retirarse de la encuesta en cualquier momento, sin que ello genere consecuencia alguna.",
-    "De conformidad con lo dispuesto en el artículo 5 de la Ley N.º 8968 (Protección de la Persona frente al Tratamiento de sus Datos Personales), se le informa que:",
+    "Usted está siendo invitado(a) a participar de forma libre y voluntaria en la Encuesta Policial de Percepción Institucional 2026, dirigida al personal de la Fuerza Pública. El objetivo de esta encuesta es recopilar información de carácter preventivo, estadístico e institucional, desde la experiencia operativa del personal policial, con el fin de fortalecer el análisis estratégico, la planificación preventiva y la mejora continua del servicio policial. La participación es totalmente voluntaria. Usted puede negarse a responder cualquier pregunta, así como retirarse de la encuesta en cualquier momento, sin que ello genere consecuencia alguna.",
+    "De conformidad con lo dispuesto en el artículo 5 de la Ley N.º 8968, Ley de Protección de la Persona frente al Tratamiento de sus Datos Personales, se le informa que:",
     "Finalidad del tratamiento: La información recopilada será utilizada exclusivamente para fines estadísticos, analíticos y preventivos, y no para investigaciones penales, procesos judiciales, sanciones administrativas ni procedimientos disciplinarios.",
     "Datos personales: Algunos apartados permiten, de forma voluntaria, el suministro de datos personales o información de contacto.",
     "Tratamiento de los datos: Los datos serán almacenados, analizados y resguardados bajo criterios de confidencialidad y seguridad, conforme a la normativa vigente.",
-    "Destinatarios y acceso: La información será conocida únicamente por el personal autorizado del Ministerio de Seguridad Pública / Fuerza Pública, para los fines indicados. No será cedida a terceros ajenos a estos fines.",
-    "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de las instancias competentes, será responsable del tratamiento y custodia de la información recolectada.",
+    "Carácter confidencial del instrumento: El instrumento no es anónimo. La información será tratada bajo criterios de estricta confidencialidad institucional y utilizada exclusivamente para análisis estadístico consolidado, sin individualización del personal participante.",
+    "Destinatarios y acceso: La información será conocida únicamente por el personal autorizado de la Fuerza Pública / Ministerio de Seguridad Pública, para los fines indicados. No será cedida a terceros ajenos a estos fines.",
+    "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección de Programas Policiales Preventivos, Oficina Estrategia Integral de Prevención para la Seguridad Pública (EIPSEP / Estrategia Sembremos Seguridad) será el responsable del tratamiento y custodia de la información recolectada.",
     "Derechos de la persona participante: Usted conserva el derecho a la autodeterminación informativa y a decidir libremente sobre el suministro de sus datos.",
     "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales correspondientes.",
-    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar.",
+    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar."
 ]
 
 # NOTAS ACLARATORIAS (P3)
@@ -1450,5 +1449,6 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
 
 
