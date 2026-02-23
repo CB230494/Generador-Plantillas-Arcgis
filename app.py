@@ -16,12 +16,13 @@
 # - NO incluye Cantón/Distrito (solo Delegación destino)
 # - Incluye:
 #   P1 Introducción (Policial Percepción Institucional 2026)
-#   P2 Consentimiento (igual)
-#   P3 Datos generales (1–5.1) + NOTAS aclaratorias (5 y 5.1)
-#   P4 Información de interés policial (6–8 + 6.1–6.4 condicional)
-#   P5 Información de interés interno (9–18 + condicionales 10.1, 11.1, 12.1, 13.1, 16.1)
+#   P2 Consentimiento (actualizado)
+#   P3 Datos generales (1–5.1) + textos informativos + NOTAS aclaratorias (5 y 5.1)
+#   P4 Contexto territorial y problemáticas de interés operativo (6–8 + 6.1–6.4 condicional) + nota bajo 7 y 8
+#   P5 Información de condiciones institucionales y operativas (9–18 + condicionales 10.1, 11.1, 12.1, 13.1, 16.1)
 #     * Se agregan nuevas preguntas 14 y 15 (aseo / ornato) con sus notas
 #     * Se re-numera: antes 14→16, 14.1→16.1, 15→17, 16→18
+#     * Se agregan notas informativas bajo 10, 10.1, 11, 11.1, 12, 12.1, 13, 13.1, 16, 16.1, 17, 18
 # ==========================================================================================
 
 import re
@@ -236,17 +237,85 @@ INTRO_POLICIAL_2026 = (
     "planificación preventiva y la mejora del servicio policial."
 )
 
-INTRO_DATOS_GENERALES = ()
-
-INTRO_INTERES_POLICIAL = (
-    "En este apartado, el objetivo principal es comprender las estructuras criminales y las problemáticas de interés policial "
-    "presentes en la jurisdicción de la delegación. A través de esto se busca obtener una visión clara de la naturaleza y dinámicas "
-    "de las organizaciones criminales en la zona."
+# --- TEXTOS INFORMativos por página (según imágenes) ---
+P3_TEXTO_SUPERIOR = (
+    "Esta encuesta tiene como propósito recopilar información desde la experiencia operativa del personal de la Fuerza Pública, "
+    "con el fin de fortalecer el análisis institucional, la planificación preventiva y la mejora continua del servicio policial. "
+    "Las respuestas se basan en la experiencia profesional dentro de la jurisdicción y en el entorno institucional de la delegación."
+)
+P3_TITULO = "Datos generales de carácter estadístico y funcional"
+P3_INTRO = (
+    "Este apartado recopila información general de carácter funcional y demográfico con fines exclusivamente estadísticos y analíticos. "
+    "No se solicita información que permita la identificación individual del personal participante."
 )
 
-INTRO_INTERES_INTERNO = (
-    "En este apartado se recopila información sobre recursos, condiciones institucionales, necesidades de capacitación y factores "
-    "internos que inciden en la prestación del servicio policial. La información es para uso institucional y análisis preventivo."
+P4_TITULO = "Contexto territorial y problemáticas de interés operativo"
+P4_INTRO = (
+    "En este apartado se recopila información desde la experiencia territorial del personal policial sobre personas o estructuras criminales "
+    "y problemáticas de interés en la jurisdicción. La información tiene carácter descriptivo y preventivo, orientada al análisis estratégico "
+    "institucional, sin sustituir los mecanismos formales de denuncia o investigación."
+)
+
+P5_TITULO = "Información de condiciones institucionales y operativas de la delegación"
+P5_INTRO = (
+    "Este apartado tiene como finalidad recopilar percepciones sobre condiciones internas que inciden en la prestación del servicio policial, "
+    "tales como recursos, capacitación, entorno laboral y funcionamiento operativo. La información se utiliza con fines de mejora institucional "
+    "y no constituye evaluación individual ni disciplinaria."
+)
+
+# --- NOTAS específicas por preguntas (según solicitud) ---
+NOTA_Q7 = (
+    "La información brindada tiene carácter descriptivo y se fundamenta en la experiencia operativa del personal dentro de su área de responsabilidad."
+)
+NOTA_Q8 = (
+    "La información brindada tiene carácter descriptivo y se fundamenta en la experiencia operativa del personal dentro de su área de responsabilidad."
+)
+
+NOTA_Q10 = (
+    "La respuesta se basa en la apreciación general sobre condiciones operativas de la delegación y se utiliza con fines diagnósticos institucionales."
+)
+NOTA_Q101 = (
+    "La respuesta se basa en la apreciación general sobre condiciones operativas de la delegación y se utiliza con fines diagnósticos institucionales."
+)
+
+NOTA_Q11 = (
+    "Nota: la respuesta es de selección única. La información recopilada tiene como finalidad identificar necesidades generales de fortalecimiento "
+    "profesional para la planificación institucional."
+)
+NOTA_Q111 = (
+    "La información recopilada tiene como finalidad identificar necesidades generales de fortalecimiento profesional para la planificación institucional."
+)
+
+NOTA_Q12 = (
+    "Nota: La respuesta refleja una apreciación general sobre el entorno institucional y se utiliza para análisis agregado, sin implicar valoración individual."
+)
+NOTA_Q121 = (
+    "La respuesta refleja una apreciación general sobre el entorno institucional y se utiliza para análisis agregado, sin implicar valoración individual."
+)
+
+NOTA_Q13 = (
+    "Nota: La información suministrada es confidencial y de uso institucional para fines preventivos y de mejora organizacional. "
+    "No sustituye los canales formales establecidos por la normativa disciplinaria vigente."
+)
+NOTA_Q131 = (
+    "Nota: La respuesta es abierta. La información suministrada es confidencial y de uso institucional para fines preventivos y de mejora organizacional. "
+    "No sustituye los canales formales establecidos por la normativa disciplinaria vigente."
+)
+
+NOTA_Q16 = (
+    "Nota: La respuesta es de selección única. La información suministrada será tratada bajo estricta reserva institucional y se utiliza exclusivamente "
+    "para análisis preventivo. No sustituye los mecanismos formales de denuncia establecidos por la normativa vigente."
+)
+NOTA_Q161 = (
+    "Nota: La respuesta es abierta. La información suministrada será tratada bajo estricta reserva institucional y se utiliza exclusivamente para análisis "
+    "preventivo. No sustituye los mecanismos formales de denuncia establecidos por la normativa vigente."
+)
+
+NOTA_Q17 = (
+    "Nota: El suministro de información de contacto es totalmente voluntario y no condiciona la participación en la encuesta. La respuesta es abierta."
+)
+NOTA_Q18 = (
+    "Nota: El espacio es de carácter voluntario y permite agregar información que la persona participante considere relevante desde su experiencia operativa."
 )
 
 CONSENTIMIENTO_TITULO = "Consentimiento Informado para la Participación en la Encuesta"
@@ -264,7 +333,7 @@ CONSENTIMIENTO_BLOQUES = [
     "Responsable de la base de datos: El Ministerio de Seguridad Pública, a través de la Dirección de Programas Policiales Preventivos, Oficina Estrategia Integral de Prevención para la Seguridad Pública (EIPSEP / Estrategia Sembremos Seguridad) será el responsable del tratamiento y custodia de la información recolectada.",
     "Derechos de la persona participante: Usted conserva el derecho a la autodeterminación informativa y a decidir libremente sobre el suministro de sus datos.",
     "Las respuestas brindadas no constituyen denuncias formales, ni sustituyen los mecanismos legales correspondientes.",
-    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar."
+    "Al continuar con la encuesta, usted manifiesta haber leído y comprendido la información anterior y otorga su consentimiento informado para participar.",
 ]
 
 # NOTAS ACLARATORIAS (P3)
@@ -495,7 +564,7 @@ if "seed_cargado_policial" not in st.session_state:
         }
     )
 
-    # ---------------- P4 INFORMACIÓN DE INTERÉS POLICIAL (6–8 + 6.1–6.4) ----------------
+    # ---------------- P4 CONTEXTO TERRITORIAL / INTERÉS OPERATIVO (6–8 + 6.1–6.4) ----------------
     _add_if_missing(
         {
             "tipo_ui": "Selección única",
@@ -617,7 +686,7 @@ if "seed_cargado_policial" not in st.session_state:
         }
     )
 
-    # ---------------- P5 INFORMACIÓN DE INTERÉS INTERNO (9–18) ----------------
+    # ---------------- P5 CONDICIONES INSTITUCIONALES / OPERATIVAS (9–18) ----------------
     _add_if_missing(
         {
             "tipo_ui": "Párrafo (texto largo)",
@@ -906,7 +975,10 @@ else:
 
             up_btn = c2.button("⬆️ Subir", key=f"up_{qid}", use_container_width=True, disabled=(idx == 0))
             down_btn = c3.button(
-                "⬇️ Bajar", key=f"down_{qid}", use_container_width=True, disabled=(idx == len(st.session_state.preguntas) - 1)
+                "⬇️ Bajar",
+                key=f"down_{qid}",
+                use_container_width=True,
+                disabled=(idx == len(st.session_state.preguntas) - 1),
             )
             edit_btn = c4.button("✏️ Editar", key=f"edit_{qid}", use_container_width=True)
             del_btn = c5.button("🗑️ Eliminar", key=f"del_{qid}", use_container_width=True)
@@ -1241,7 +1313,6 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
         group_name,
         page_label,
         names_set,
-        intro_note_text: str = None,
         group_appearance: str = "field-list",
         group_relevant: str = None,
         extra_notes: List[Dict] = None,
@@ -1251,12 +1322,6 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
         if group_relevant:
             row["relevant"] = group_relevant
         survey_rows.append(row)
-
-        if intro_note_text:
-            note = {"type": "note", "name": f"{group_name}_intro", "label": intro_note_text}
-            if group_relevant:
-                note["relevant"] = group_relevant
-            survey_rows.append(note)
 
         if extra_notes:
             for nn in extra_notes:
@@ -1271,7 +1336,6 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
             if qq["name"] in names_set:
                 add_q(qq, i)
 
-                # insertar notes inmediatamente después de la pregunta
                 notes_after = per_question_notes.get(qq["name"], [])
                 for n in notes_after:
                     nrow = dict(n)
@@ -1282,30 +1346,34 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
         survey_rows.append({"type": "end_group", "name": f"{group_name}_end"})
 
     # --------------------------------------------------------------------------------------
-    # P3 Datos generales (con notas aclaratorias después de 5 y 5.1)
+    # P3 Datos generales (texto superior + título + intro + notas aclaratorias 5 y 5.1)
     # --------------------------------------------------------------------------------------
+    extra_notes_p3 = [
+        {"type": "note", "name": "p3_texto_superior", "label": P3_TEXTO_SUPERIOR},
+        {"type": "note", "name": "p3_titulo", "label": f"<p style='text-align:center;'><b>{P3_TITULO}</b></p>"},
+        {"type": "note", "name": "p3_intro", "label": P3_INTRO},
+    ]
+
     per_notes_p3 = {
-        "clase_policial": [
-            {"type": "note", "name": "nota_aclaratoria_q5", "label": NOTA_ACLARATORIA_Q5}
-        ],
-        "funcion_principal": [
-            {"type": "note", "name": "nota_aclaratoria_q51", "label": NOTA_ACLARATORIA_Q51}
-        ],
+        "clase_policial": [{"type": "note", "name": "nota_aclaratoria_q5", "label": NOTA_ACLARATORIA_Q5}],
+        "funcion_principal": [{"type": "note", "name": "nota_aclaratoria_q51", "label": NOTA_ACLARATORIA_Q51}],
     }
 
     add_page(
         "p3_datos_generales",
         "Datos generales",
         p_datos_generales,
-        intro_note_text=INTRO_DATOS_GENERALES,
         group_appearance="field-list",
         group_relevant=rel_si,
+        extra_notes=extra_notes_p3,
         per_question_notes=per_notes_p3,
     )
 
     # --------------------------------------------------------------------------------------
-    # P4 Información de interés policial
-    # (con NOTA previa confidencial condicionada a presencia_ilicita = Sí)
+    # P4 Contexto territorial y problemáticas de interés operativo
+    # + Nota previa confidencial condicionada a presencia_ilicita = Sí
+    # + Título e introducción (imagen 2)
+    # + Nota bajo pregunta 7 y 8
     # --------------------------------------------------------------------------------------
     nota_previa_confidencial = {
         "type": "note",
@@ -1314,35 +1382,68 @@ def construir_xlsform(preguntas, form_title: str, idioma: str, version: str, reg
         "relevant": f"{rel_si} and ${{presencia_ilicita}}='{slugify_name('Sí')}'",
     }
 
+    extra_notes_p4 = [
+        {"type": "note", "name": "p4_titulo", "label": f"<p style='text-align:center;'><b>{P4_TITULO}</b></p>"},
+        {"type": "note", "name": "p4_intro", "label": P4_INTRO},
+        nota_previa_confidencial,
+    ]
+
+    per_notes_p4 = {
+        "zona_mayor_inseguridad": [{"type": "note", "name": "nota_q7", "label": NOTA_Q7}],
+        "condiciones_riesgo_zona": [{"type": "note", "name": "nota_q8", "label": NOTA_Q8}],
+    }
+
     add_page(
         "p4_interes_policial",
-        "Información de interés policial",
+        "Interés operativo",
         p_interes_policial,
-        intro_note_text=INTRO_INTERES_POLICIAL,
         group_appearance="field-list",
         group_relevant=rel_si,
-        extra_notes=[nota_previa_confidencial],
+        extra_notes=extra_notes_p4,
+        per_question_notes=per_notes_p4,
     )
 
     # --------------------------------------------------------------------------------------
-    # P5 Información de interés interno (con notas inmediatamente después de 14 y 15)
+    # P5 Información de condiciones institucionales y operativas de la delegación
+    # + Título e introducción (imagen 3)
+    # + Notas bajo 10, 10.1, 11, 11.1, 12, 12.1, 13, 13.1, 14, 15, 16, 16.1, 17, 18
     # --------------------------------------------------------------------------------------
+    extra_notes_p5 = [
+        {"type": "note", "name": "p5_titulo", "label": f"<p style='text-align:center;'><b>{P5_TITULO}</b></p>"},
+        {"type": "note", "name": "p5_intro", "label": P5_INTRO},
+    ]
+
     per_notes_p5 = {
-        "condiciones_aseo_interno": [
-            {"type": "note", "name": "nota_q14_aseo", "label": NOTA_ASEO_Q14}
-        ],
-        "condiciones_ornato_entorno": [
-            {"type": "note", "name": "nota_q15_ornato", "label": NOTA_ORNATO_Q15}
-        ],
+        # 10 y 10.1
+        "condiciones_basicas_ok": [{"type": "note", "name": "nota_q10", "label": NOTA_Q10}],
+        "condiciones_mejorar": [{"type": "note", "name": "nota_q101", "label": NOTA_Q101}],
+        # 11 y 11.1
+        "falta_capacitacion": [{"type": "note", "name": "nota_q11", "label": NOTA_Q11}],
+        "areas_capacitacion": [{"type": "note", "name": "nota_q111", "label": NOTA_Q111}],
+        # 12 y 12.1
+        "entorno_motivacion": [{"type": "note", "name": "nota_q12", "label": NOTA_Q12}],
+        "motivo_motivacion": [{"type": "note", "name": "nota_q121", "label": NOTA_Q121}],
+        # 13 y 13.1
+        "situaciones_internas": [{"type": "note", "name": "nota_q13", "label": NOTA_Q13}],
+        "desc_situaciones_internas": [{"type": "note", "name": "nota_q131", "label": NOTA_Q131}],
+        # 14 y 15 (ya existentes)
+        "condiciones_aseo_interno": [{"type": "note", "name": "nota_q14_aseo", "label": NOTA_ASEO_Q14}],
+        "condiciones_ornato_entorno": [{"type": "note", "name": "nota_q15_ornato", "label": NOTA_ORNATO_Q15}],
+        # 16 y 16.1
+        "oficiales_relacion_crimen": [{"type": "note", "name": "nota_q16", "label": NOTA_Q16}],
+        "desc_oficiales_relacion": [{"type": "note", "name": "nota_q161", "label": NOTA_Q161}],
+        # 17 y 18
+        "contacto_voluntario": [{"type": "note", "name": "nota_q17", "label": NOTA_Q17}],
+        "info_adicional": [{"type": "note", "name": "nota_q18", "label": NOTA_Q18}],
     }
 
     add_page(
         "p5_interes_interno",
-        "Información de interés interno",
+        "Condiciones institucionales",
         p_interes_interno,
-        intro_note_text=INTRO_INTERES_INTERNO,
         group_appearance="field-list",
         group_relevant=rel_si,
+        extra_notes=extra_notes_p5,
         per_question_notes=per_notes_p5,
     )
 
@@ -1449,6 +1550,7 @@ st.info(
     "📌 Recordatorio Survey123: coloca el archivo del logo (por ejemplo, "
     f"**{_get_logo_media_name()}**) dentro de la carpeta **media/** del proyecto en Survey123 Connect."
 )
+
 
 
 
